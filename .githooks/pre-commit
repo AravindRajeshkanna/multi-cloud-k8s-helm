@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Runs CI's fast checks before each commit: Terraform formatting, shellcheck,
+# actionlint, and the offline test suites (about 10 seconds). Enable it once with
+# `make hooks`. Skip it for one commit with `git commit --no-verify`.
+set -u
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+missing=""
+for tool in terraform shellcheck actionlint helm kubectl jq; do
+  command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
+done
+if [ -n "$missing" ]; then
+  echo "pre-commit: cannot run the checks, missing:$missing" >&2
+  echo "Install them (see 'make prereqs'), or commit with --no-verify." >&2
+  exit 1
+fi
+
+echo "pre-commit: make fmt-check lint test" >&2
+if ! make --no-print-directory fmt-check lint test >/dev/null; then
+  echo "pre-commit: a check failed. Run 'make fmt-check lint test' to see which." >&2
+  exit 1
+fi

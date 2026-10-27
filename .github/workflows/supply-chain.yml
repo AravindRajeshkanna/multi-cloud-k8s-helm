@@ -1,0 +1,107 @@
+name: Supply chain
+
+# Scans every container image the clusters run (the workload and the platform
+# add-ons, at the versions Terraform pins) for known vulnerabilities, and records
+# a CycloneDX SBOM for each as a downloadable artifact. A run fails when an image
+# has a vulnerability at or above the threshold (critical by default) that has a
+# fix available, because then there is something to bump to. Unfixable findings
+# are reported, never failed on, and a finding that upstream has not fixed in any
+# release can be accepted for a while in supply-chain-exceptions.txt.
+#
+# Runs weekly (new vulnerabilities appear in images that did not change), on
+# demand, and on pull requests that change what runs. What it covers and how to
+# respond: docs/supply-chain.md.
+#
+# The scanner actions are third-party and run in a job that holds no secrets and
+# has read-only access. They are pinned to full commit SHAs, not tags: in March
+# 2026 the tags of a popular scanning action (trivy-action) were rewritten to
+# deliver malware, and a SHA cannot be moved. Dependabot proposes SHA updates.
+
+on:
+  schedule:
+    - cron: "0 4 * * 1" # Mondays, 04:00 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - charts/**
+      - scripts/list-images.sh
+      - scripts/scan-summary.sh
+      - supply-chain-exceptions.txt
+      - infra/modules/core-addons/variables.tf
+      - infra/aws-eks/variables.tf
+      - .github/workflows/supply-chain.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  images:
+    name: list images
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+        with:
+          version-file: .tool-versions
+      - name: List the images the charts run
+        id: list
+        run: |
+          images=$(scripts/list-images.sh)
+          {
+            echo "### Images scanned"
+            echo
+            printf '%s\n' "$images" | sed 's/^/- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "matrix=$(printf '%s\n' "$images" | jq -R . | jq -sc '{image: .}')" >> "$GITHUB_OUTPUT"
+
+  scan:
+    name: scan ${{ matrix.image }}
+    needs: images
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.images.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Name for this image's files
+        id: name
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: echo "safe=$(printf '%s' "$IMAGE" | tr -c 'A-Za-z0-9._-' '-')" >> "$GITHUB_OUTPUT"
+
+      # Report only: the pass/fail rule is in scripts/scan-summary.sh, so the
+      # summary below is written even when the run fails.
+      - name: Scan for vulnerabilities
+        id: grype
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: ${{ matrix.image }}
+          fail-build: false
+          output-format: json
+
+      - name: Summarize and apply the threshold
+        env:
+          REPORT: ${{ steps.grype.outputs.json }}
+          IMAGE: ${{ matrix.image }}
+          THRESHOLD: ${{ vars.SCAN_FAIL_SEVERITY || 'critical' }}
+        run: |
+          status=0
+          summary=$(scripts/scan-summary.sh "$REPORT" "$IMAGE" "$THRESHOLD" supply-chain-exceptions.txt) || status=$?
+          printf '%s\n' "$summary" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: Record the SBOM
+        if: always()
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ matrix.image }}
+          format: cyclonedx-json
+          artifact-name: sbom-${{ steps.name.outputs.safe }}.cdx.json
+          upload-release-assets: false

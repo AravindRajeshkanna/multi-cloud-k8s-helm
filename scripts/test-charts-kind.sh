@@ -9,8 +9,11 @@
 # What it proves that scripts/test-charts.sh cannot: the API server accepts the
 # manifests, the pods start and pass their probes under the hardened security
 # context, `helm test` passes, an upgrade from dev to prod values works, cert-manager
-# issues the certificate, and Traefik routes a request to the app. It ends by
-# running scripts/deploy.sh, the script the workflows use, against the cluster.
+# issues the certificate, and Traefik routes a request to the app. The application
+# namespaces enforce the admission policies in policies/ and the restricted Pod
+# Security Standard, as on the real clusters, so every install is also a policy
+# test. It ends by running scripts/deploy.sh, the script the workflows use,
+# against the cluster.
 # CI runs it on a fresh kind cluster. On a machine where the node's address is
 # not reachable from the host (Docker Desktop), set SKIP_INGRESS_SMOKE=1.
 #
@@ -42,7 +45,7 @@ k get namespace >/dev/null || die "cannot reach the cluster behind context '$ctx
 
 # default of a Terraform variable
 tf_default() {
-  awk -v v="$1" '$0 ~ "variable \"" v "\"" { f = 1 } f && /default/ { gsub(/"/, "", $3); print $3; exit }' \
+  awk -v v="$1" '$0 ~ "variable \"" v "\"" { f = 1 } f && /^[ \t]*default[ \t]*=/ { gsub(/"/, "", $3); print $3; exit }' \
     "$root/infra/modules/core-addons/variables.tf"
 }
 cert_manager_version=$(tf_default cert_manager_chart_version)
@@ -51,12 +54,13 @@ if [ -z "$cert_manager_version" ] || [ -z "$traefik_version" ]; then
   die "cannot read the chart versions from infra/modules/core-addons/variables.tf"
 fi
 
-namespaces="cert-manager traefik-test web-eks web-aks web-gke web-prod web-dev"
+namespaces="cert-manager traefik-test web-eks web-aks web-gke web-prod web-dev web-http"
 cleanup() {
   log "cleaning up"
-  for ns in web-eks web-aks web-gke web-prod web-dev; do h uninstall web -n "$ns" >/dev/null 2>&1 || true; done
+  for ns in web-eks web-aks web-gke web-prod web-dev web-http; do h uninstall web -n "$ns" >/dev/null 2>&1 || true; done
   h uninstall issuers -n cert-manager >/dev/null 2>&1 || true
   h uninstall traefik -n traefik-test >/dev/null 2>&1 || true
+  k delete -f "$root/policies/admission/" --ignore-not-found >/dev/null 2>&1 || true
   h uninstall cert-manager -n cert-manager >/dev/null 2>&1 || true
   # shellcheck disable=SC2086 # the list is words on purpose
   k delete namespace $namespaces --ignore-not-found --wait=false >/dev/null 2>&1 || true
@@ -83,6 +87,18 @@ log "cluster-issuers"
 retry 6 10 h upgrade --install issuers "$root/charts/cluster-issuers" -n cert-manager --wait
 k wait --for=condition=Ready clusterissuer/selfsigned --timeout=120s
 
+log "admission policies (policies/admission)"
+k apply -f "$root/policies/admission/" >/dev/null
+
+# prepare_ns <namespace>: create it and label it the way scripts/deploy.sh does,
+# so the policies and the restricted Pod Security Standard apply from the first pod.
+prepare_ns() {
+  k create namespace "$1" --dry-run=client -o yaml | k apply -f - >/dev/null
+  k label namespace "$1" --overwrite \
+    policy.multi-cloud-k8s-helm.io/enforce=true \
+    pod-security.kubernetes.io/enforce=restricted >/dev/null
+}
+
 log "Traefik $traefik_version (the ingress controller Phase 1 installs)"
 h upgrade --install traefik traefik --repo https://traefik.github.io/charts --version "$traefik_version" \
   -n traefik-test --create-namespace --set service.type=NodePort --set deployment.replicas=1 --wait --timeout 5m
@@ -95,6 +111,7 @@ for cloud in eks aks gke; do
   ns=web-$cloud
   log "webapp with values-$cloud.yaml (node label pool=$pool)"
   k label nodes --all "pool=$pool" --overwrite >/dev/null
+  prepare_ns "$ns"
   h upgrade --install web "$app" -n "$ns" --create-namespace -f "$app/values-$cloud.yaml" -f "$app/values-dev.yaml" --wait --timeout 5m
   h test web -n "$ns" --timeout 5m
   ready=$(k -n "$ns" get deploy -o jsonpath='{.items[0].status.readyReplicas}')
@@ -108,19 +125,26 @@ host=web.example.test
 image=ghcr.io/stefanprodan/podinfo:$(awk -F'"' '/^appVersion:/ { print $2 }' "$app/Chart.yaml")
 traefik_ip=$(k -n traefik-test get svc traefik -o jsonpath='{.spec.clusterIP}')
 # probe <curl args...>: run curl inside the cluster, from the app's own image.
+# In the Traefik namespace, which does not enforce the workload policies: this
+# throwaway pod sets no resources or security context.
 probe() {
-  k -n "$ns" run ingress-probe --rm -i --restart=Never --quiet --image="$image" --command -- \
+  k -n traefik-test run ingress-probe --rm -i --restart=Never --quiet --image="$image" --command -- \
     curl -fsS --max-time 5 -H "Host: $host" "$@"
 }
 
-log "webapp: dev values with a plain-HTTP ingress"
+# Plain HTTP is refused in the enforcing namespaces (the ingress policy demands
+# TLS), so this one check of Traefik's HTTP routing uses a namespace that does not enforce.
+log "webapp: a plain-HTTP ingress, in a namespace that does not enforce the policies"
 k label nodes --all pool=default --overwrite >/dev/null
-h upgrade --install web "$app" -n "$ns" --create-namespace -f "$app/values-dev.yaml" \
+h upgrade --install web "$app" -n web-http --create-namespace -f "$app/values-dev.yaml" \
   --set ingress.enabled=true --set ingress.host=$host --wait --timeout 5m
 log "routing an HTTP request through Traefik (Host: $host)"
 retry 10 3 probe "http://$traefik_ip/healthz" >/dev/null || die "Traefik did not route http://$host/healthz to the app"
+h uninstall web -n web-http --wait
 
-log "upgrade to prod values"
+log "webapp in the enforcing namespace: dev values, then an upgrade to prod values"
+prepare_ns "$ns"
+h upgrade --install web "$app" -n "$ns" --create-namespace -f "$app/values-dev.yaml" --wait --timeout 5m
 h upgrade web "$app" -n "$ns" -f "$app/values-prod.yaml" --set ingress.host=$host --set ingress.tls.clusterIssuer=selfsigned --wait --timeout 5m
 for kind in hpa pdb ingress; do
   [ -n "$(k -n "$ns" get "$kind" -o name)" ] || die "prod values should have created a $kind"

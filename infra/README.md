@@ -81,7 +81,7 @@ kubectl config use-context mc-aks                          # switch clusters
 
 - Kubernetes 1.35, managed node group in private subnets across 3 AZs; a single NAT gateway by default (`single_nat_gateway = false` for one per AZ).
 - Both IRSA (OIDC provider) and Pod Identity are enabled. The EBS CSI driver and Cluster Autoscaler use Pod Identity.
-- The Cluster Autoscaler chart's minor version must match `kubernetes_version`; bump them together.
+- The Cluster Autoscaler's chart version and image tag (`cluster_autoscaler_chart_version`, `cluster_autoscaler_image_tag`) must match `kubernetes_version`'s minor; bump them together. The image tag is set explicitly because the chart's default lags upstream's patch releases ([supply-chain.md](../docs/supply-chain.md)).
 - Traefik's Service is annotated for an in-tree NLB, so the AWS Load Balancer Controller isn't required yet.
 
 ### AKS

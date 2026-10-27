@@ -5,11 +5,13 @@
 #
 #   deploy.sh <aws|azure|gcp> <dev|prod>
 #
-# In the roadmap's order: 1. the platform pieces that depend on the cluster's
-# cert-manager (the issuers; cert-manager and the ingress controller themselves
-# come from Terraform), 2. shared services (none yet), 3. the application chart,
-# 4. validation: helm test, the certificate, the HPA receiving metrics, and a
-# real HTTPS request through the ingress controller's load balancer.
+# In the roadmap's order: 1. the platform pieces that depend on the cluster
+# (the admission policies in policies/, and the cert-manager issuers;
+# cert-manager and the ingress controller themselves come from Terraform),
+# 2. shared services (none yet), 3. the application chart in a namespace that
+# enforces those policies, 4. validation: helm test, the certificate, the HPA
+# receiving metrics, and a real HTTPS request through the ingress controller's
+# load balancer.
 #
 # dev gets an ingress with a self-signed certificate, so it needs no domain.
 # prod uses Let's Encrypt, so it needs APP_DOMAIN and ACME_EMAIL, and a DNS
@@ -20,6 +22,7 @@
 #   APP_DOMAIN           base domain; hosts are web-<env>.<cloud>.<domain>
 #                        (default example.test; required for prod)
 #   ACME_EMAIL           enables the Let's Encrypt issuers (required for prod)
+#   IMAGE_TAG            deploy this image tag instead of the chart's appVersion
 #   INGRESS_ADDRESS      address (IP or name) of the ingress controller;
 #                        default: the load balancer of Service ingress/traefik
 #   INGRESS_HTTPS_PORT   default 443
@@ -120,6 +123,10 @@ k get crd clusterissuers.cert-manager.io >/dev/null 2>&1 ||
 
 # --- 1. platform -------------------------------------------------------------
 
+log "platform: admission policies (policies/admission)"
+k apply -f "$root/policies/admission/" >/dev/null ||
+  die "cannot apply the admission policies (ValidatingAdmissionPolicy needs Kubernetes 1.30 or newer)"
+
 log "platform: cert-manager issuers"
 issuer_args=()
 if [ -n "${ACME_EMAIL:-}" ]; then
@@ -135,11 +142,20 @@ retry 6 "$poll" h upgrade --install issuers "$root/charts/cluster-issuers" -n ce
 
 log "application: $release in $ns on $cloud ($env), host $host"
 app_args=(-f "$root/charts/webapp/values-$values_cloud.yaml" -f "$root/charts/webapp/values-$env.yaml" --set "ingress.host=$host")
+if [ -n "${IMAGE_TAG:-}" ]; then
+  app_args+=(--set-string "image.tag=$IMAGE_TAG")
+fi
 if [ "$env" = dev ]; then
   # No domain needed: self-signed TLS, and requests carry the Host header.
   app_args+=(--set ingress.enabled=true --set ingress.tls.enabled=true --set ingress.tls.clusterIssuer=selfsigned)
 fi
-h upgrade --install "$release" "$root/charts/webapp" -n "$ns" --create-namespace "${app_args[@]}" \
+# Created and labelled first, so the policies and the restricted Pod Security
+# Standard apply from the first pod (Helm's --create-namespace cannot label).
+k create namespace "$ns" --dry-run=client -o yaml | k apply -f - >/dev/null
+k label namespace "$ns" --overwrite \
+  policy.multi-cloud-k8s-helm.io/enforce=true \
+  pod-security.kubernetes.io/enforce=restricted >/dev/null
+h upgrade --install "$release" "$root/charts/webapp" -n "$ns" "${app_args[@]}" \
   --wait --rollback-on-failure --timeout 10m
 
 # --- 4. validate -------------------------------------------------------------

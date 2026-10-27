@@ -75,6 +75,10 @@ Plain HTTP on an Ingress that has a `tls` section, and HTTP-to-HTTPS redirects, 
 
 No secret goes in a values file. The chart reads Secrets by reference: `envFrom` (`secretRef`) and `extraEnv` (`valueFrom.secretKeyRef`) name a Kubernetes Secret that exists in the namespace. Where that Secret comes from is in [deploying.md](deploying.md#secrets).
 
+## Policies
+
+The workload namespaces refuse pods and ingresses that break a few rules (resources, version-pinned images from approved registries, HTTPS ingress, the restricted Pod Security Standard). The chart is built to pass them and a test proves it for every cloud and environment: [policies.md](policies.md). If you point `image.repository` at another registry, add it to the allow-list there.
+
 ## What the chart sets for you
 
 Every rendered workload has resource requests and limits (the schema refuses a chart without them), startup, liveness and readiness probes, a PodDisruptionBudget, soft zone and node spreading, and the Kubernetes "restricted" security profile: non-root with a numeric user, read-only root filesystem, no privilege escalation, all capabilities dropped, the runtime's default seccomp profile, and no service account token unless asked for. `values.schema.json` rejects mistyped keys, a `latest` image tag, and a wrong type. Autoscaling uses metrics-server, which is present on all three platform clusters.

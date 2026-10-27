@@ -79,6 +79,9 @@ resource "helm_release" "cluster_autoscaler" {
 
   values = [yamlencode({
     awsRegion = var.region
+    image = {
+      tag = var.cluster_autoscaler_image_tag
+    }
     autoDiscovery = {
       clusterName = module.eks.cluster_name
     }
