@@ -67,7 +67,7 @@ Code is in [charts/](../../charts/): `webapp` (a stateless service, podinfo by d
 
 ### How it is tested
 
-- `scripts/test-charts.sh` (`make test`, CI): lint and render every combination and assert on the manifests with `jq` (97 checks), including negative tests for the guards. Six deliberate breakages of the chart were each caught.
+- `scripts/test-charts.sh` (`make test`, CI): lint and render every combination and assert on the manifests with `jq` (98 checks), including negative tests for the guards. Six deliberate breakages of the chart were each caught.
 - `scripts/test-charts-kind.sh` (CI, on a fresh kind cluster): installs cert-manager, the issuers and Traefik at the versions Terraform pins, then installs the chart with each cloud's values file, runs `helm test`, upgrades dev to prod values, waits for the issued certificate and sends requests through Traefik.
 - cert-manager's `ClusterIssuer` fields were checked against the CRD at the pinned version.
 

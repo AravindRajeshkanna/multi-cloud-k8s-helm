@@ -66,6 +66,9 @@ Set these as **environment** secrets / variables on the matching environment (Se
 | Kind | Name | Value |
 |------|------|-------|
 | variable | `TF_RUNNER` | `runs-on` label of a static-IP or self-hosted runner. Default `ubuntu-latest`, whose IP is added to each cluster's API allow-list per run (see [cost-control.md](cost-control.md#how-the-runner-reaches-the-cluster)). |
+| variable | `APP_DOMAIN` | A domain whose DNS you control, for `prod` deployments (hosts are `web-prod.<cloud>.<domain>`). Optional; can also be set per environment. See [deploying.md](deploying.md#variables). |
+| variable | `ACME_EMAIL` | Email for Let's Encrypt; installs the staging and production issuers and is required for `prod`. Optional. |
+| variable | `SKIP_INGRESS_SMOKE` | `1` skips the HTTPS request through the load balancer after a deploy, for a runner that cannot reach it. Optional. |
 | variable | `AUTO_TEARDOWN` | `true` lets the nightly [cost guard](cost-control.md#cost-guard-catching-a-forgotten-cluster) destroy clusters it finds running. Leave unset to only get an alert. |
 
 Setting values from the CLI:

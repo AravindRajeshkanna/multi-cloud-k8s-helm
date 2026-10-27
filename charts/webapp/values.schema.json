@@ -22,6 +22,8 @@
     "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
     "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
     "env": { "type": "object", "additionalProperties": { "type": "string" } },
+    "extraEnv": { "type": "array", "items": { "type": "object", "required": ["name"] } },
+    "envFrom": { "type": "array", "items": { "type": "object" } },
     "updateStrategy": { "type": "object" },
     "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
     "resources": {

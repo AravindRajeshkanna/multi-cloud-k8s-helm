@@ -1,0 +1,92 @@
+name: Deploy workloads
+
+# Deploys the applications to a running cluster and checks that they work:
+# cert-manager issuers, the webapp chart for the chosen environment, helm test,
+# the certificate, the autoscaler's metrics, and a real HTTPS request through
+# the cluster's load balancer. What it does, step by step: docs/deploying.md.
+#
+# The cluster has to be up first (Clusters workflow, action "up"). The Clusters
+# workflow can also run this after "up" (its "deploy" input). Credentials and
+# runner access work as in terraform.yml; Helm is the version in .tool-versions.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        description: Which cluster(s) to deploy to
+        type: choice
+        options: [aws, azure, gcp, all]
+        required: true
+      environment:
+        description: dev (self-signed TLS, needs no domain) or prod (Let's Encrypt, needs the APP_DOMAIN and ACME_EMAIL variables)
+        type: choice
+        options: [dev, prod]
+        default: dev
+
+permissions:
+  contents: read
+  id-token: write # request the OIDC token exchanged for cloud credentials
+
+jobs:
+  preflight:
+    name: check request
+    runs-on: ubuntu-latest
+    steps:
+      # The runner's IP is added to the cluster's API allow-list, which changes
+      # the cluster, and what is deployed should be reviewed code.
+      - name: Require main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != refs/heads/main ]; then
+            echo "::error::Deploying only runs from main (this run is on $REF)."
+            exit 1
+          fi
+
+  deploy:
+    name: deploy ${{ inputs.environment }} to ${{ matrix.cloud }}
+    needs: preflight
+    runs-on: ${{ vars.TF_RUNNER || 'ubuntu-latest' }}
+    environment: ${{ matrix.cloud }}
+    strategy:
+      fail-fast: false
+      matrix:
+        cloud: ${{ fromJSON(inputs.cloud == 'all' && '["aws","azure","gcp"]' || format('["{0}"]', inputs.cloud)) }}
+    # Its own group, for the reason given in helm-check.yml: a deploy must never
+    # push a pending `down` out of the Clusters workflow's queue.
+    concurrency:
+      group: deploy-${{ matrix.cloud }}
+      cancel-in-progress: false
+    env:
+      CLUSTER_NAME: ${{ vars.CLUSTER_NAME }}
+      CLOUD_REGION: ${{ vars.CLOUD_REGION }}
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v5
+        with:
+          version-file: .tool-versions
+
+      - uses: ./.github/actions/cluster-access
+        with:
+          cloud: ${{ matrix.cloud }}
+          allow-runner-ip: ${{ vars.TF_RUNNER == '' }}
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.CLOUD_REGION || 'us-east-1' }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          gcp-workload-identity-provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          gcp-service-account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      # Writes its summary to the job summary itself.
+      - name: Deploy and validate
+        env:
+          CLOUD: ${{ matrix.cloud }}
+          DEPLOY_ENV: ${{ inputs.environment }}
+          APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          # A custom runner may not be able to reach the load balancer.
+          SKIP_INGRESS_SMOKE: ${{ vars.SKIP_INGRESS_SMOKE }}
+        run: scripts/deploy.sh "$CLOUD" "$DEPLOY_ENV"

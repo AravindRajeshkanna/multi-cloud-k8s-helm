@@ -3,7 +3,7 @@ name: webapp
 description: A portable, stateless web service. Runs podinfo by default; the same chart deploys unchanged to EKS, AKS and GKE, and per-cloud differences live in values files only.
 type: application
 # The chart's own SemVer; bump it when anything in this directory changes.
-version: 0.1.0
+version: 0.2.0
 # The default image tag (podinfo release).
 appVersion: "6.17.0"
 # The "-0" lets managed-Kubernetes versions such as 1.35.2-eks-abc123 match.

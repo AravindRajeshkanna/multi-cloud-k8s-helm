@@ -27,6 +27,25 @@ Secrets: Prefer External Secrets Operator + cloud secret managers (AWS Secrets M
 
 ## Implementation status
 
-Not started. Step 1 (platform add-ons: ingress, cert-manager) is done by Phase 1's Terraform; monitoring arrives with Phase 6. Replace `eks-prod` in examples with the real context name (`mc-eks`, `mc-aks`, `mc-gke`).
+**Implemented; tested offline and against a throwaway kind cluster, not yet run on EKS, AKS or GKE.** Guide: [deploying.md](../deploying.md). Decisions: [ADR 0006](../decisions/0006-deployment-model.md).
 
-Ready from earlier phases: the `webapp` and `cluster-issuers` charts and their per-cloud / per-environment values ([charts.md](../charts.md)), the pinned Helm 4 client and the login / kubeconfig steps in [helm-check.yml](../../.github/workflows/helm-check.yml). The deploy workflow still has to be written, including installing `cluster-issuers` after `up`, and the first deployment to real clusters will show whether the node pool labels and the HPA dependencies hold.
+| Roadmap item | What was done |
+|--------------|---------------|
+| `helm upgrade --install ... -f values -f values-<cloud> -f values-<env> --kube-context` | [scripts/deploy.sh](../../scripts/deploy.sh): the same command for every cloud, with the real context names (`mc-eks`, `mc-aks`, `mc-gke`), `--wait --rollback-on-failure`, namespace `web-<dev\|prod>` |
+| 1. Platform add-ons | Ingress, cert-manager, metrics-server and the autoscaler come from Phase 1's Terraform. The deploy installs the cert-manager issuers on top (`charts/cluster-issuers`). Monitoring arrives with Phase 6 |
+| 2. Shared services | **Deferred.** No workload needs a database or cache yet |
+| 3. Application charts | The `webapp` chart, `dev` and `prod` |
+| 4. Validate | `helm test`, certificate issuance, the autoscaler receiving metrics, and an HTTPS request through the cloud load balancer, in the script and so on every deployment |
+| Secrets via External Secrets Operator | **Deferred.** The chart reads Secrets by reference (`envFrom`, `extraEnv`), nothing is stored in the repo, and the intended per-cloud design is in [deploying.md](../deploying.md#secrets). The operator needs identities and stores that cannot be tested without real accounts |
+| Phase 1 gap: workloads return after `up` | The Clusters workflow has a `deploy` input; `up` with `deploy=dev` brings a torn-down setup fully back |
+
+Workflows: [deploy.yml](../../.github/workflows/deploy.yml) (any time, from `main`), and the `deploy` input of [terraform.yml](../../.github/workflows/terraform.yml). Both use the new `cluster-access` composite action for login, runner access and the kubeconfig.
+
+### How it is tested
+
+- `scripts/test-deploy.sh` (CI, `make test`): stubbed `helm`, `kubectl` and `curl`; 64 checks of what is called with which arguments and of every failure path. I broke the script deliberately (rollback dropped, wrong values order, certificate and autoscaler checks removed, context not passed, helm test skipped, the ingress request removed) and every breakage is caught; the first round exposed one assertion that proved nothing about the app's install, which was tightened.
+- The kind job in CI ends by running the real `deploy.sh` against the throwaway cluster, with a request sent from the runner through Traefik's node port.
+
+### Not covered until a real `up`
+
+The load balancer address lookup and the request through a real cloud load balancer; metrics-server on the real clusters; the node pool labels; Let's Encrypt (needs a domain); the cloud-specific parts of the `cluster-access` action (the same calls `helm-check.yml` already made).

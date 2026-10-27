@@ -45,12 +45,19 @@ spec:
             - name: http
               containerPort: {{ .Values.containerPort }}
               protocol: TCP
-          {{- with .Values.env }}
+          {{- if or .Values.env .Values.extraEnv }}
           env:
-            {{- range $name, $value := . }}
+            {{- range $name, $value := .Values.env }}
             - name: {{ $name }}
               value: {{ $value | quote }}
             {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
           {{- end }}
           {{- range $name, $probe := .Values.probes }}
           {{ $name }}Probe:

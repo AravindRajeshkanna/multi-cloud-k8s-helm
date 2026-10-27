@@ -33,4 +33,4 @@ Phase 1 already installs Traefik, cert-manager and (on EKS) metrics-server and C
 
 - The open Helm 3 vs 4 question is closed: Helm 4.
 - Keep Helm inside the supported Kubernetes window when the clusters' versions change ([ADR 0004](../decisions/0004-helm-client.md#consequences)). `.tool-versions` is not updated by Dependabot.
-- Phase 4 should reuse the steps of the Helm check (login, allow the runner, `kubeconfig`, `--kube-context`). If that makes a third copy of the runner-IP step (it is in `terraform.yml` and `helm-check.yml`), move it into a composite action then.
+- Phase 4 reused the Helm check's steps. They now live in the `cluster-access` composite action (login, allow the runner, kubeconfig), used by `helm-check.yml` and `deploy.yml`; `terraform.yml` keeps its own because it needs the runner IP as a Terraform variable before the cluster exists.
