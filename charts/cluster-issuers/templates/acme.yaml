@@ -1,0 +1,22 @@
+{{- range $issuer := list .Values.acme.staging .Values.acme.production }}
+{{- if $issuer.enabled }}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ $issuer.name }}
+  labels:
+    app.kubernetes.io/name: {{ $.Chart.Name }}
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+spec:
+  acme:
+    server: {{ $issuer.server }}
+    email: {{ required "acme.email is required when a Let's Encrypt issuer is enabled" $.Values.acme.email }}
+    privateKeySecretRef:
+      name: {{ $issuer.name }}-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: {{ $.Values.acme.ingressClassName }}
+{{- end }}
+{{- end }}

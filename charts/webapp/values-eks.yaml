@@ -1,0 +1,22 @@
+# EKS (cluster mc-eks, infra/aws-eks). Only what really differs on this cloud.
+
+# The managed node group's label (infra/aws-eks/main.tf). Remove this if you
+# change the node group's labels.
+nodeSelector:
+  pool: default
+
+# A visible marker so you can tell which cloud answered.
+env:
+  PODINFO_UI_MESSAGE: "Hello from EKS"
+  PODINFO_UI_COLOR: "#ff9900"
+
+# Workload identity (only if the app calls AWS APIs), pick one:
+#
+# - EKS Pod Identity (recommended): nothing goes here. Create an
+#   aws_eks_pod_identity_association for this namespace and service account in
+#   Terraform; the agent injects credentials.
+# - IRSA: annotate the service account with the IAM role.
+#
+# serviceAccount:
+#   annotations:
+#     eks.amazonaws.com/role-arn: arn:aws:iam::<account-id>:role/<role-name>

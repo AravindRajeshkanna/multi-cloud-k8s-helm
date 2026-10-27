@@ -1,0 +1,11 @@
+apiVersion: v2
+name: cluster-issuers
+description: cert-manager ClusterIssuers for the platform - a self-signed issuer that works anywhere, and Let's Encrypt (staging and production) for real domains. The same on EKS, AKS and GKE.
+type: application
+version: 0.1.0
+kubeVersion: ">=1.32.0-0"
+home: https://github.com/AravindRajeshkanna/multi-cloud-k8s-helm
+sources:
+  - https://github.com/AravindRajeshkanna/multi-cloud-k8s-helm
+maintainers:
+  - name: Aravind Rajesh Kanna

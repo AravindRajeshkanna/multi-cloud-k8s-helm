@@ -81,7 +81,11 @@ Not added, on purpose: **ingress-nginx** (retired, [ADR 0002](decisions/0002-ing
 
 The old flag names still work in Helm 4 with a deprecation warning, but scripts and docs in this repo use the new ones.
 
-## 5. Checking Helm against the live clusters
+## 5. Deploying the charts
+
+The charts, their values files and the exact `helm upgrade --install` commands per cloud and environment are in [charts.md](charts.md).
+
+## 6. Checking Helm against the live clusters
 
 Actions → **Helm check** → *Run workflow* → choose a cloud (or `all`), or:
 

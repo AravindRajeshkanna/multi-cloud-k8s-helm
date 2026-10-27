@@ -1,0 +1,162 @@
+# Defaults for the webapp chart. Nothing in this file is specific to one cloud:
+# differences between EKS, AKS and GKE live in values-eks.yaml, values-aks.yaml
+# and values-gke.yaml, and differences between environments in values-dev.yaml
+# and values-prod.yaml. Layer them with repeated -f flags; later files win.
+# A typo in a key is rejected by values.schema.json.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# --- workload ---------------------------------------------------------------
+
+# Ignored while autoscaling.enabled is true (the autoscaler owns the count).
+replicaCount: 2
+revisionHistoryLimit: 3
+
+image:
+  repository: ghcr.io/stefanprodan/podinfo
+  # Defaults to the chart's appVersion. Pin to a digest or a release tag; never "latest".
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# podinfo's binary lives in the image's working directory. Replace command, env,
+# containerPort and the probe paths to run a different HTTP service.
+command: ["./podinfo"]
+containerPort: 9898
+
+# Environment variables as a map, so values files can add to it. podinfo reads
+# PODINFO_* variables (for example PODINFO_UI_MESSAGE and PODINFO_UI_COLOR).
+env:
+  PODINFO_LEVEL: info
+
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+terminationGracePeriodSeconds: 30
+
+# Always set requests and limits (enforced by the schema).
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi
+
+# Probes are rendered as <name>Probe with an httpGet on the container port.
+# Set one to null to leave it out, for example --set probes.startup=null.
+probes:
+  startup:
+    path: /healthz
+    periodSeconds: 2
+    failureThreshold: 30
+  liveness:
+    path: /healthz
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readiness:
+    path: /readyz
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+# --- security ---------------------------------------------------------------
+# Meets the Kubernetes "restricted" Pod Security Standard. The image's user has
+# a name but no fixed numeric ID, so a numeric runAsUser is set explicitly.
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# The root filesystem is read-only; these paths get a scratch emptyDir.
+# Volume name: mount path.
+emptyDirs:
+  tmp: /tmp
+  data: /data
+
+serviceAccount:
+  create: true
+  # Defaults to the release's full name.
+  name: ""
+  # The API token is only needed if the app calls the Kubernetes API.
+  automount: false
+  # Workload identity goes here, per cloud (see values-eks.yaml, values-aks.yaml, values-gke.yaml).
+  annotations: {}
+
+podLabels: {}
+podAnnotations: {}
+
+# --- networking -------------------------------------------------------------
+
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+# Routed by the Traefik controller installed by Phase 1 (class "traefik"), which
+# behaves the same on every cloud, so no cloud-specific annotations are needed.
+ingress:
+  enabled: false
+  className: traefik
+  # Required when enabled. Each cloud has its own load balancer address, so the
+  # host is chosen per deployment, not per chart: --set ingress.host=...
+  host: ""
+  path: /
+  pathType: Prefix
+  annotations: {}
+  tls:
+    enabled: false
+    # Defaults to <fullname>-tls.
+    secretName: ""
+    # Adds the cert-manager.io/cluster-issuer annotation; the issuer comes from
+    # charts/cluster-issuers (selfsigned, letsencrypt-staging, letsencrypt-prod).
+    clusterIssuer: ""
+
+# --- availability and scheduling --------------------------------------------
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  # Optional; leave null to scale on CPU only.
+  targetMemoryUtilizationPercentage: null
+
+# Voluntary disruptions (node drains, upgrades). Set minAvailable to use that
+# instead of maxUnavailable; a PDB takes only one of the two.
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+  minAvailable: null
+
+# Prefer spreading replicas across zones and across nodes. Soft (ScheduleAnyway),
+# so a single-zone or single-node cluster still schedules.
+topologySpread:
+  enabled: true
+  maxSkew: 1
+
+# Dedicated node pools (GPU, memory-heavy, ...). Pool labels differ per cloud;
+# see the per-cloud values files.
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# --- helm test ----------------------------------------------------------------
+# `helm test <release>` runs a pod that calls the Service's health endpoint with
+# podcli, which ships in the podinfo image. Disable it if you change the image.
+test:
+  enabled: true

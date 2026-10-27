@@ -28,3 +28,5 @@ Secrets: Prefer External Secrets Operator + cloud secret managers (AWS Secrets M
 ## Implementation status
 
 Not started. Step 1 (platform add-ons: ingress, cert-manager) is done by Phase 1's Terraform; monitoring arrives with Phase 6. Replace `eks-prod` in examples with the real context name (`mc-eks`, `mc-aks`, `mc-gke`).
+
+Ready from earlier phases: the `webapp` and `cluster-issuers` charts and their per-cloud / per-environment values ([charts.md](../charts.md)), the pinned Helm 4 client and the login / kubeconfig steps in [helm-check.yml](../../.github/workflows/helm-check.yml). The deploy workflow still has to be written, including installing `cluster-issuers` after `up`, and the first deployment to real clusters will show whether the node pool labels and the HPA dependencies hold.

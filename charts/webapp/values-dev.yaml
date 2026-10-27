@@ -1,0 +1,22 @@
+# Development: small and cheap, one replica, no disruption budget.
+replicaCount: 1
+
+autoscaling:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false
+
+topologySpread:
+  enabled: false
+
+env:
+  PODINFO_LEVEL: debug
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi
