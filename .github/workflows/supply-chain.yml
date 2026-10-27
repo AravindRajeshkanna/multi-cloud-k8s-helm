@@ -5,7 +5,8 @@ name: Supply chain
 # a CycloneDX SBOM for each as a downloadable artifact. A run fails when an image
 # has a vulnerability at or above the threshold (critical by default) that has a
 # fix available, because then there is something to bump to. Unfixable findings
-# are reported, never failed on.
+# are reported, never failed on, and a finding that upstream has not fixed in any
+# release can be accepted for a while in supply-chain-exceptions.txt.
 #
 # Runs weekly (new vulnerabilities appear in images that did not change), on
 # demand, and on pull requests that change what runs. What it covers and how to
@@ -25,6 +26,7 @@ on:
       - charts/**
       - scripts/list-images.sh
       - scripts/scan-summary.sh
+      - supply-chain-exceptions.txt
       - infra/modules/core-addons/variables.tf
       - infra/aws-eks/variables.tf
       - .github/workflows/supply-chain.yml
@@ -91,7 +93,7 @@ jobs:
           THRESHOLD: ${{ vars.SCAN_FAIL_SEVERITY || 'critical' }}
         run: |
           status=0
-          summary=$(scripts/scan-summary.sh "$REPORT" "$IMAGE" "$THRESHOLD") || status=$?
+          summary=$(scripts/scan-summary.sh "$REPORT" "$IMAGE" "$THRESHOLD" supply-chain-exceptions.txt) || status=$?
           printf '%s\n' "$summary" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"
 

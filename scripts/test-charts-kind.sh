@@ -45,7 +45,7 @@ k get namespace >/dev/null || die "cannot reach the cluster behind context '$ctx
 
 # default of a Terraform variable
 tf_default() {
-  awk -v v="$1" '$0 ~ "variable \"" v "\"" { f = 1 } f && /default/ { gsub(/"/, "", $3); print $3; exit }' \
+  awk -v v="$1" '$0 ~ "variable \"" v "\"" { f = 1 } f && /^[ \t]*default[ \t]*=/ { gsub(/"/, "", $3); print $3; exit }' \
     "$root/infra/modules/core-addons/variables.tf"
 }
 cert_manager_version=$(tf_default cert_manager_chart_version)
@@ -54,10 +54,10 @@ if [ -z "$cert_manager_version" ] || [ -z "$traefik_version" ]; then
   die "cannot read the chart versions from infra/modules/core-addons/variables.tf"
 fi
 
-namespaces="cert-manager traefik-test web-eks web-aks web-gke web-prod web-dev"
+namespaces="cert-manager traefik-test web-eks web-aks web-gke web-prod web-dev web-http"
 cleanup() {
   log "cleaning up"
-  for ns in web-eks web-aks web-gke web-prod web-dev; do h uninstall web -n "$ns" >/dev/null 2>&1 || true; done
+  for ns in web-eks web-aks web-gke web-prod web-dev web-http; do h uninstall web -n "$ns" >/dev/null 2>&1 || true; done
   h uninstall issuers -n cert-manager >/dev/null 2>&1 || true
   h uninstall traefik -n traefik-test >/dev/null 2>&1 || true
   k delete -f "$root/policies/admission/" --ignore-not-found >/dev/null 2>&1 || true
@@ -132,15 +132,19 @@ probe() {
     curl -fsS --max-time 5 -H "Host: $host" "$@"
 }
 
-log "webapp: dev values with a plain-HTTP ingress"
+# Plain HTTP is refused in the enforcing namespaces (the ingress policy demands
+# TLS), so this one check of Traefik's HTTP routing uses a namespace that does not enforce.
+log "webapp: a plain-HTTP ingress, in a namespace that does not enforce the policies"
 k label nodes --all pool=default --overwrite >/dev/null
-prepare_ns "$ns"
-h upgrade --install web "$app" -n "$ns" --create-namespace -f "$app/values-dev.yaml" \
+h upgrade --install web "$app" -n web-http --create-namespace -f "$app/values-dev.yaml" \
   --set ingress.enabled=true --set ingress.host=$host --wait --timeout 5m
 log "routing an HTTP request through Traefik (Host: $host)"
 retry 10 3 probe "http://$traefik_ip/healthz" >/dev/null || die "Traefik did not route http://$host/healthz to the app"
+h uninstall web -n web-http --wait
 
-log "upgrade to prod values"
+log "webapp in the enforcing namespace: dev values, then an upgrade to prod values"
+prepare_ns "$ns"
+h upgrade --install web "$app" -n "$ns" --create-namespace -f "$app/values-dev.yaml" --wait --timeout 5m
 h upgrade web "$app" -n "$ns" -f "$app/values-prod.yaml" --set ingress.host=$host --set ingress.tls.clusterIssuer=selfsigned --wait --timeout 5m
 for kind in hpa pdb ingress; do
   [ -n "$(k -n "$ns" get "$kind" -o name)" ] || die "prod values should have created a $kind"

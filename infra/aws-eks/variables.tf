@@ -81,9 +81,15 @@ variable "node_max_size" {
 }
 
 variable "cluster_autoscaler_chart_version" {
-  description = "Version of the cluster-autoscaler Helm chart. Its minor version must match var.kubernetes_version."
+  description = "Version of the cluster-autoscaler Helm chart. Its minor version must match var.kubernetes_version, and so must var.cluster_autoscaler_image_tag."
   type        = string
   default     = "9.59.0"
+}
+
+variable "cluster_autoscaler_image_tag" {
+  description = "Image tag of the Cluster Autoscaler. The chart's own default lags the upstream patch releases, so this is set explicitly: use the newest v<kubernetes_version>.x."
+  type        = string
+  default     = "v1.35.2"
 }
 
 variable "tags" {

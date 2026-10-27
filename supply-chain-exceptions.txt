@@ -1,0 +1,10 @@
+# Vulnerabilities in images the clusters run that have a fix upstream but no
+# release containing it yet, accepted for a limited time so the weekly scan stays
+# meaningful. See docs/supply-chain.md before adding a line.
+#
+#   <exact image reference> | <vulnerability id> | <expires YYYY-MM-DD> | <reason>
+#
+# An entry applies to that exact image reference, so bumping the version retires
+# it, and it stops applying on the expiry date, so it has to be looked at again.
+
+registry.k8s.io/metrics-server/metrics-server:v0.9.0 | GO-2026-6612 | 2026-12-11 | Fixed in Go 1.26.9 and golang.org/x/net 0.60.0; this build has Go 1.26.4 and x/net 0.56.0. v0.9.0 (2026-07-13) is the newest metrics-server release and chart 3.14.0 the newest chart (checked 2026-10-27), so there is nothing to bump to.

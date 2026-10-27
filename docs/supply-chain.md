@@ -22,12 +22,30 @@ The job summary has a table per image (found / fix available per severity) and t
 
 Each run uploads one CycloneDX JSON SBOM per image as an artifact (*Actions → the run → Artifacts*, named `sbom-<image>.cdx.json`), kept for the repository's default artifact retention. Use them to answer "does anything we run contain package X?" without re-scanning.
 
+## Findings nobody has fixed yet
+
+Often the "fix available" is a newer Go standard library or dependency that the upstream project has not yet shipped in any release. Failing every week on that would train everyone to ignore the job, so such a finding can be **accepted for a while** in [supply-chain-exceptions.txt](../supply-chain-exceptions.txt):
+
+```
+<exact image reference> | <vulnerability id> | <expires YYYY-MM-DD> | <reason>
+```
+
+- It applies to **that exact image reference**: bumping the version retires the exception, and the new image is scanned fresh.
+- It **stops applying on the expiry date** and the run fails again. Pick a short time (weeks, not months) and look for a new release when it comes round.
+- The reason has to say what was checked and when (for example "newest release is X; checked on DATE"), not just that it was accepted.
+- A malformed line is an error, never silently ignored.
+- Accepted findings are still listed in the job summary.
+
+Before adding one, check for a newer image or chart first. The Cluster Autoscaler is an example: its chart defaulted to the 1.35.0 image while upstream had released 1.35.1 and 1.35.2, so Terraform now sets the newest patch explicitly (`cluster_autoscaler_image_tag`).
+
 ## Responding to a failure
 
 | Image | Fix |
 |-------|-----|
 | `ghcr.io/stefanprodan/podinfo` | Bump `appVersion` in `charts/webapp/Chart.yaml` (and the chart `version`), or deploy a patched tag now with the Deploy workflow's `image_tag` input |
-| A platform add-on (Traefik, cert-manager, metrics-server, autoscaler) | Bump its chart version in Terraform (`infra/modules/core-addons/variables.tf`, `infra/aws-eks/variables.tf`) and run `up`. Keep the autoscaler chart's minor version in step with the Kubernetes version |
+| A platform add-on (Traefik, cert-manager, metrics-server) | Bump its chart version in Terraform (`infra/modules/core-addons/variables.tf`) and run `up` |
+| The Cluster Autoscaler | Bump `cluster_autoscaler_image_tag` (and the chart version if there is a newer one) in `infra/aws-eks/variables.tf`; keep both on the cluster's Kubernetes minor |
+| Nothing newer exists | Accept it for a while, as above |
 
 ## Why Grype and why pinned SHAs
 
@@ -44,4 +62,4 @@ I found no reported incident for Anchore's tools, which is not proof that there 
 - It scans images this repo **runs but does not build** (there is no first-party image yet). Provenance and signing of images become relevant when one is built ([ADR 0007](decisions/0007-delivery-strategy.md)).
 - A scan finds known vulnerabilities in packages, not malicious images or misconfiguration.
 - `docker.io/traefik` is pulled anonymously from Docker Hub, which rate-limits shared runner addresses; if that scan fails with a rate-limit error, re-run it.
-- The first runs happen in the pull request that adds the workflow; whether Grype's results are as expected is judged there.
+- Grype matches package versions, not whether the vulnerable code is reachable, so a finding can be real in the database and harmless in practice. That is a reason to accept it with an expiry, not to ignore the job.
