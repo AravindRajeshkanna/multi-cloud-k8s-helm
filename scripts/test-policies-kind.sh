@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tests the admission policies in policies/ (and the Pod Security Standard that
-# scripts/deploy.sh also enforces) on a THROWAWAY local cluster (kind, minikube...).
+# Tests the admission policies in policies/admission, the quota and limit range in
+# policies/namespace, and the Pod Security Standard that scripts/deploy.sh also
+# enforces, on a THROWAWAY local cluster (kind, minikube...).
 # It installs the policies, creates two namespaces, and deletes them again; never
 # point it at a cluster that matters.
 #
@@ -33,6 +34,7 @@ k get namespace >/dev/null || die "cannot reach the cluster behind context '$ctx
 [ -z "$(k get namespace ingress --ignore-not-found -o name)" ] || die "namespace 'ingress' exists: this looks like a platform cluster, refusing"
 
 on=policy-on
+lim=policy-limits
 off=policy-off
 failures=0
 pass() { echo "ok    $1"; }
@@ -44,7 +46,7 @@ fail() {
 
 cleanup() {
   k delete -f "$root/policies/admission/" --ignore-not-found >/dev/null 2>&1 || true
-  k delete namespace "$on" "$off" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  k delete namespace "$on" "$lim" "$off" --ignore-not-found --wait=false >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -98,8 +100,16 @@ denied() { # <description> <text the refusal must contain> <namespace> <json>
 
 log "installing the policies"
 k apply -f "$root/policies/admission/" >/dev/null
-for ns in "$on" "$off"; do k create namespace "$ns" >/dev/null; done
-k label namespace "$on" policy.multi-cloud-k8s-helm.io/enforce=true pod-security.kubernetes.io/enforce=restricted >/dev/null
+for ns in "$on" "$lim" "$off"; do k create namespace "$ns" >/dev/null; done
+for ns in "$on" "$lim"; do
+  k label namespace "$ns" policy.multi-cloud-k8s-helm.io/enforce=true pod-security.kubernetes.io/enforce=restricted >/dev/null
+done
+# The limit range refuses a pod with no memory request or limit BEFORE the CEL rules
+# get to see it (it is an earlier admission step), which would hide the rules' own
+# messages. So the rules are tested in a namespace with the quota and network
+# policies but no limit range, and the limit range in one with everything.
+k apply -n "$on" -f "$root/policies/namespace/resource-quota.yaml" -f "$root/policies/namespace/network.yaml" >/dev/null
+k apply -n "$lim" -f "$root/policies/namespace/" >/dev/null
 
 # A policy takes a moment to start enforcing: wait until a violation is refused.
 log "waiting for the policies to be enforced"
@@ -138,11 +148,37 @@ admitted "an image from Artifact Registry is admitted" "$on" "$(pod us-central1-
 privileged=$(pod "$good_image" | jq '.spec.containers[0].securityContext = {privileged: true}')
 denied "a privileged pod is refused by the Pod Security Standard" "PodSecurity" "$on" "$privileged"
 
+echo "-- namespace quota and limit range (policies/namespace)"
+sized() { # <cpu request> <memory request> <memory limit>: the compliant pod with that sizing
+  pod "$good_image" | jq --arg cr "$1" --arg mr "$2" --arg ml "$3" '.spec.containers[0].resources = {requests: {cpu: $cr, memory: $mr}, limits: {memory: $ml}}'
+}
+admitted "a modestly sized pod is admitted" "$on" "$(sized 100m 128Mi 256Mi)"
+admitted "and in the namespace that also has the limit range" "$lim" "$(sized 100m 128Mi 256Mi)"
+# 16Mi requested and 256Mi allowed is a ratio of 16; the limit range allows 4.
+denied "a limit far above the request is refused by the limit range" "limit to request ratio" "$lim" "$(sized 100m 16Mi 256Mi)"
+admitted "the same pod is admitted where there is no limit range" "$on" "$(sized 100m 16Mi 256Mi)"
+# The limit range must not fill in what a pod left out: that would defeat the
+# policy requiring pods to declare their resources. With min/max in the limit range
+# this pod was ADMITTED, with a 2Gi limit it never asked for. Any refusal will do here.
+denied "a pod that declares nothing is refused, not given defaults" "Forbidden" "$lim" "$(pod "$good_image" | jq 'del(.spec.containers[0].resources)')"
+# Three containers of 1500Mi are each within the limit range, but 4.5Gi in total
+# is over the namespace's 4Gi of requested memory.
+over_quota=$(pod "$good_image" | jq --arg image "$good_image" '.spec.containers = [range(3) as $i | {
+  name: "c\($i)", image: $image,
+  resources: {requests: {cpu: "10m", memory: "1500Mi"}, limits: {memory: "1500Mi"}},
+  securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: ["ALL"]}}}]')
+denied "a pod that would exceed the namespace's memory quota is refused" "exceeded quota: workload-quota" "$on" "$over_quota"
+admitted "the same pod is admitted in a namespace with no quota" "$off" "$over_quota"
+
 echo "-- scope"
 admitted "the same violations are admitted in a namespace that is not labelled" "$off" "$bad"
-solver=$(pod quay.io/jetstack/cert-manager-acmesolver:v1.21.3 | jq 'del(.spec.containers[0].resources) | .metadata.labels = {"acme.cert-manager.io/http01-solver": "true"}')
+# cert-manager gives its challenge pods these resources itself (cert-manager v1.21.3,
+# --acme-http01-solver-resource-*: 10m / 64Mi requests, 100m / 64Mi limits), so they
+# satisfy the quota. What the exemption is for is the image: quay.io/jetstack/ is not
+# on the registry allow-list.
+solver=$(pod quay.io/jetstack/cert-manager-acmesolver:v1.21.3 | jq '.spec.containers[0].resources = {requests: {cpu: "10m", memory: "64Mi"}, limits: {cpu: "100m", memory: "64Mi"}} | .metadata.labels = {"acme.cert-manager.io/http01-solver": "true"}')
 admitted "cert-manager's challenge pods are exempt from the workload policies" "$on" "$solver"
-denied "the exemption is only for the label, not for the image" "workloads-" "$on" "$(printf '%s' "$solver" | jq 'del(.metadata.labels)')"
+denied "the exemption is only for the label, not for the image" "workloads-allowed-registries" "$on" "$(printf '%s' "$solver" | jq 'del(.metadata.labels)')"
 
 # --- ingresses ----------------------------------------------------------------
 

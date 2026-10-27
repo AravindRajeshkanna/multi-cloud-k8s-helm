@@ -14,7 +14,7 @@ One set of Helm charts, three managed Kubernetes services. The clusters are prov
 | 3 | Portable Helm charts (`webapp`, `cluster-issuers`) | implemented — tested by rendering and on a kind cluster, **not yet deployed to real clusters** |
 | 4 | Deploy workloads (`deploy.sh`, Deploy workflow, redeploy after `up`) | implemented — tested offline and on kind, **not yet run on real clusters** |
 | 5 | CI/CD, policy and supply chain (GitOps reconsidered) | partly built, partly decided — admission policies and image scanning tested in CI, **not yet on real clusters** |
-| 6 | Observability, security hardening, operations | planned |
+| 6 | Observability, security hardening, operations | partly built, partly deliberately left — quota and network rules in every workload namespace, optional Prometheus + Grafana, operations guide; tested on kind, **not yet on real clusters** |
 
 Full plan with per-phase status: [docs/roadmap](docs/roadmap/README.md).
 
@@ -32,10 +32,13 @@ docs/
   policies.md       the admission policies the workload namespaces enforce
   supply-chain.md   image scanning and SBOMs
   pipeline.md       every workflow, when it runs, and the path from a change to production
+  hardening.md      quota, limit range and network rules per namespace; what is not done
+  observability.md  the optional Prometheus and Grafana stack
+  operations.md     the routine, disaster recovery and where to look when something breaks
   licenses.md       licensing of this repo and its dependencies
 infra/              Phase 1: Terraform for EKS, AKS, GKE (+ runbook in infra/README.md)
 charts/             Phase 3: Helm charts - webapp (one chart, per-cloud values files), cluster-issuers
-policies/           Phase 5: admission policies (ValidatingAdmissionPolicy) for the workload namespaces
+policies/           admission/ (Phase 5, ValidatingAdmissionPolicy) and namespace/ (Phase 6, quota, limit range, network rules)
 scripts/            check-prereqs.sh, cluster-ops.sh (drain / audit / allow-ip / kubeconfig / addons), deploy.sh, list-images.sh, scan-summary.sh, and their tests
 .github/workflows/  ci.yml, terraform.yml (plan / up / down), deploy.yml, cost-guard.yml (nightly check), helm-check.yml, supply-chain.yml
 .githooks/          pre-commit hook (make hooks)
@@ -71,6 +74,7 @@ gh workflow run terraform.yml -f cloud=all -f action=up -f deploy=dev           
 - Standard clusters (you own the node pools), one cluster per cloud, namespaces for environments.
 - Plain Helm driven from CI; GitOps is reconsidered in Phase 5.
 - Helm 4, pinned in `.tool-versions`; the cluster is always chosen with `--kube-context` ([ADR 0004](docs/decisions/0004-helm-client.md), [docs/helm.md](docs/helm.md)).
+- Workload namespaces also get a resource quota and default-deny network rules; Prometheus and Grafana are an optional, default-off add-on ([ADR 0009](docs/decisions/0009-hardening-and-operations.md), [docs/hardening.md](docs/hardening.md)).
 - Workload namespaces enforce native admission policies and the restricted Pod Security Standard; every image the clusters run is scanned weekly ([ADR 0008](docs/decisions/0008-policy-and-supply-chain.md)).
 - Delivery stays CI-driven: GitOps was reconsidered and a reconciling controller would fight the teardown ([ADR 0007](docs/decisions/0007-delivery-strategy.md)).
 - Deployments come from one script run from `main` and are validated against the real load balancer ([ADR 0006](docs/decisions/0006-deployment-model.md), [docs/deploying.md](docs/deploying.md)).

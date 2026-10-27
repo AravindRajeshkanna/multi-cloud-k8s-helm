@@ -100,3 +100,9 @@ variable "tags" {
     managed-by = "terraform"
   }
 }
+
+variable "enable_monitoring" {
+  description = "Install Prometheus and Grafana as a platform add-on (docs/observability.md). Off by default."
+  type        = bool
+  default     = false
+}

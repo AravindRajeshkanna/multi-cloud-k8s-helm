@@ -1,0 +1,26 @@
+# Keeps the shape of one container's memory sane: its limit may be at most 4x its
+# request. Without a ratio, a tiny request with a huge limit gets scheduled anywhere
+# and then starves its neighbours.
+#
+# Memory only. A ratio needs both a request and a limit, so a CPU ratio would force a
+# CPU limit on every pod, while the admission policy (workloads-require-resources)
+# deliberately requires a CPU request but not a CPU limit (CPU limits throttle).
+# Memory limits are mandatory there already.
+#
+# Why a ratio and not min / max: Kubernetes turns a LimitRange's max into the
+# DEFAULT limit, and its min into the DEFAULT request. That silently fills in
+# whatever a pod forgot to declare and defeats the admission policy that requires
+# containers to declare their own resources. CI caught exactly this: with min and
+# max here, pods with no resources at all were admitted with a 2Gi limit. A ratio
+# sets no defaults.
+#
+# Applied into each workload namespace by scripts/deploy.sh.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: workload-limits
+spec:
+  limits:
+    - type: Container
+      maxLimitRequestRatio:
+        memory: "4"

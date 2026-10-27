@@ -14,6 +14,8 @@ Workload namespaces enforce a small set of rules at the Kubernetes API, so a mis
 
 Pod Security Admission is Kubernetes' own implementation of the restricted standard, switched on with a label rather than reimplemented here. The custom policies cover what that standard does not: resources, versions, sources and ingress.
 
+Alongside these rules, each workload namespace also gets a resource quota, a limit range and default-deny network policies: [hardening.md](hardening.md).
+
 ## Where
 
 Only in namespaces that opt in with two labels, which `scripts/deploy.sh` puts on the workload namespaces (`web-dev`, `web-prod`) **before** it installs anything:

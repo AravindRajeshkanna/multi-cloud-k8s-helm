@@ -1,6 +1,8 @@
 module "core_addons" {
   source = "../modules/core-addons"
 
+  enable_monitoring = var.enable_monitoring
+
   # EKS does not ship metrics-server; AKS and GKE do.
   enable_metrics_server = true
 

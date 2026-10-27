@@ -90,6 +90,12 @@ module "eks" {
     kube-proxy = {}
     vpc-cni = {
       before_compute = true
+      # Makes NetworkPolicy objects actually enforced (the AKS and GKE clusters
+      # run Cilium, which does so natively). Without this a policy is accepted
+      # and silently ignored.
+      configuration_values = jsonencode({
+        enableNetworkPolicy = "true"
+      })
     }
     aws-ebs-csi-driver = {
       pod_identity_association = [{
@@ -104,6 +110,15 @@ module "eks" {
       ami_type       = "AL2023_x86_64_STANDARD"
       instance_types = var.node_instance_types
       capacity_type  = "ON_DEMAND"
+
+      # Pods must not be able to reach the node's cloud credentials: IMDSv2 only,
+      # and a hop limit of 1 keeps the metadata service out of containers. This is
+      # also the module's default; it is set here so that it is a decision, not luck.
+      metadata_options = {
+        http_endpoint               = "enabled"
+        http_tokens                 = "required"
+        http_put_response_hop_limit = 1
+      }
 
       min_size     = var.node_min_size
       desired_size = var.node_desired_size

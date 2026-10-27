@@ -33,6 +33,13 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
+{{/* The helm test pod has its own labels: with the app's labels the Service would route traffic to it. */}}
+{{- define "webapp.testSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "webapp.name" . }}-test
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: test
+{{- end }}
+
 {{- define "webapp.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
 {{- default (include "webapp.fullname" .) .Values.serviceAccount.name }}

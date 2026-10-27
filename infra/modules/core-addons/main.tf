@@ -80,3 +80,20 @@ resource "helm_release" "cert_manager" {
     }
   })]
 }
+
+resource "helm_release" "monitoring" {
+  count = var.enable_monitoring ? 1 : 0
+
+  name             = "monitoring"
+  repository       = "https://prometheus-community.github.io/helm-charts"
+  chart            = "kube-prometheus-stack"
+  version          = var.monitoring_chart_version
+  namespace        = "monitoring"
+  create_namespace = true
+
+  atomic          = true
+  cleanup_on_fail = true
+  timeout         = 900
+
+  values = [file("${path.module}/monitoring-values.yaml")]
+}

@@ -38,7 +38,7 @@ Code lives in [infra/](../../infra/); the step-by-step runbook is [infra/README.
 | Workload identity | IRSA + Pod Identity enabled | OIDC issuer + Workload Identity enabled | Workload Identity pool enabled |
 | Autoscaling | Cluster Autoscaler (Pod Identity role) | Node pool autoscaler | Node pool autoscaler |
 | Storage | EBS CSI driver add-on | Built-in CSI drivers | Built-in CSI drivers |
-| Network policy | VPC CNI (enforcement is a Phase 6 item) | Cilium | Dataplane V2 (Cilium) |
+| Network policy | VPC CNI, enforcement switched on in Phase 6 | Cilium | Dataplane V2 (Cilium) |
 
 ### Taking it down and up
 
@@ -51,7 +51,7 @@ The [Clusters workflow](../../.github/workflows/terraform.yml) has `plan`, `up` 
 - **StorageClass defaults** (`gp3`, `managed-csi`, `standard-rwo`) — the Phase 3 webapp is stateless, so these move to the first stateful chart. EKS still lacks a `gp3` class ([charts.md](../charts.md#storage)).
 - **Cloud-native ingress** (ALB, Application Gateway, GKE Ingress/Gateway) — see [ADR 0002](../decisions/0002-ingress-controller.md); revisit in Phase 3.
 - **Karpenter** — Cluster Autoscaler is used; Karpenter can replace it in Phase 6.
-- **Entra ID RBAC for AKS** and **fully private API endpoints** — Phase 6 hardening.
+- **Entra ID RBAC for AKS** and **fully private API endpoints** — considered in Phase 6 and left, with reasons ([hardening.md](../hardening.md#what-was-not-done-and-why)).
 
 ### Not yet verified
 

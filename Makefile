@@ -17,6 +17,7 @@ helm-repos: ## Add the Helm chart repositories the platform add-ons come from (P
 	helm repo add traefik https://traefik.github.io/charts --force-update
 	helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server --force-update
 	helm repo add autoscaler https://kubernetes.github.io/autoscaler --force-update
+	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
 	helm repo update
 
 fmt: ## Format Terraform files

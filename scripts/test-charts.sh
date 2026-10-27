@@ -155,6 +155,25 @@ gkewi=$(render "$app" --set-string 'serviceAccount.annotations.iam\.gke\.io/gcp-
 check "GKE: Google service account annotation lands on the service account" "$gkewi" '.[]|select(.kind=="ServiceAccount")|.metadata.annotations["iam.gke.io/gcp-service-account"]=="app@proj.iam.gserviceaccount.com"'
 check "the service account is not mounted by default" "$irsa" '.[]|select(.kind=="ServiceAccount")|.automountServiceAccountToken==false'
 
+echo "-- network policy and monitoring"
+# shellcheck disable=SC2016 # the $ signs are jq variables
+check "the Service does not select the helm test pod" "$base" '(.[]|select(.kind=="Service")|.spec.selector) as $sel | (.[]|select(.kind=="Pod")|.metadata.labels) as $l | ($sel|to_entries|all(. as $e | $l[$e.key] == $e.value)) | not'
+check "the application is closed to all but the ingress controller and the helm test pod" "$base" '.[]|select(.kind=="NetworkPolicy" and .metadata.name=="rel-webapp")|(.spec.policyTypes==["Ingress"]) and (.spec.ingress[0].from|length==2) and (.spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]=="ingress") and (.spec.ingress[0].from[1].podSelector.matchLabels["app.kubernetes.io/component"]=="test") and (.spec.ingress[0].ports==[{"port":"http","protocol":"TCP"}])'
+check "the application policy selects exactly the application pods" "$base" '(.[]|select(.kind=="NetworkPolicy" and .metadata.name=="rel-webapp")|.spec.podSelector.matchLabels) == (.[]|select(.kind=="Service")|.spec.selector)'
+check "the helm test pod may only reach the application" "$base" '.[]|select(.kind=="NetworkPolicy" and .metadata.name=="rel-webapp-test")|(.spec.policyTypes==["Egress"]) and (.spec.egress|length==1) and (.spec.egress[0].to[0].podSelector.matchLabels["app.kubernetes.io/name"]=="webapp") and (.spec.egress[0].ports==[{"port":"http","protocol":"TCP"}])'
+check "the ingress namespace is a value" "$(render "$app" --set networkPolicy.ingressNamespace=traefik)" '.[]|select(.kind=="NetworkPolicy" and .metadata.name=="rel-webapp")|.spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]=="traefik"'
+check "the network policy can be turned off" "$(render "$app" --set networkPolicy.enabled=false)" '[.[]|select(.kind=="NetworkPolicy")]|length==0'
+check "no helm test pod, no test policy" "$(render "$app" --set test.enabled=false)" '[.[]|select(.kind=="NetworkPolicy")|.metadata.name]==["rel-webapp"] and (.[]|select(.kind=="NetworkPolicy")|.spec.ingress[0].from|length==1)'
+check "monitoring objects are off by default" "$base" '[.[]|select(.kind=="ServiceMonitor" or .kind=="PrometheusRule")]|length==0'
+mon=$(render "$app" --set metrics.serviceMonitor.enabled=true --set metrics.rules.enabled=true)
+check "Prometheus may reach the application once it is scraped" "$mon" '.[]|select(.kind=="NetworkPolicy" and .metadata.name=="rel-webapp")|.spec.ingress[0].from|map(.namespaceSelector.matchLabels["kubernetes.io/metadata.name"])|index("monitoring") != null'
+# shellcheck disable=SC2016 # the $ signs are jq variables
+check "the ServiceMonitor selects the Service and its named port" "$mon" '(.[]|select(.kind=="ServiceMonitor")) as $m | (.[]|select(.kind=="Service")) as $svc | ($m.spec.selector.matchLabels|to_entries|all(. as $e | $svc.metadata.labels[$e.key]==$e.value)) and ($m.spec.endpoints[0].port==$svc.spec.ports[0].name) and ($m.spec.endpoints[0].path=="/metrics")'
+check "three alerts, scoped to this release's namespace and service" "$mon" '.[]|select(.kind=="PrometheusRule")|.spec.groups[0].rules|(map(.alert)==["WebappTargetDown","WebappHighErrorRate","WebappPodRestarting"]) and all(.expr|contains("namespace=\"default\""))'
+check "the error-rate threshold is a value, in percent" "$(render "$app" --set metrics.rules.enabled=true --set metrics.rules.errorRatePercent=20)" '.[]|select(.kind=="PrometheusRule")|.spec.groups[0].rules[1].expr|contains("> 20")'
+rejects "an error-rate above 100 percent is refused" "errorRatePercent" "$app" --set metrics.rules.errorRatePercent=150
+rejects "a mistyped network policy key is refused" "additional properties" "$app" --set networkPolicy.ingressNamespaces=x
+
 echo "-- cluster-issuers"
 ci=$(render "$issuers")
 check "default: one self-signed issuer, no ACME" "$ci" '([.[]|.kind]==["ClusterIssuer"]) and ([.[]|.metadata.name]==["selfsigned"]) and (.[0].spec.selfSigned=={})'

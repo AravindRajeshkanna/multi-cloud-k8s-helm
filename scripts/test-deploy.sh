@@ -27,12 +27,14 @@ echo "kubectl $*" >>"$STUB_LOG"
 case "$*" in
   *"apply -f "*policies/admission*) [ -z "${STUB_POLICY_FAIL:-}" ] || { echo "no matches for kind ValidatingAdmissionPolicy" >&2; exit 1; } ;;
   *"get namespace"*) [ -z "${STUB_UNREACHABLE:-}" ] || exit 1 ;;
+  *"get crd servicemonitors"*) [ -n "${STUB_MONITORING:-}" ] || exit 1 ;;
   *"get crd"*) [ -z "${STUB_NO_CERT_MANAGER:-}" ] || exit 1 ;;
+  *"apply -n "*policies/namespace*) [ -z "${STUB_NAMESPACE_RULES_FAIL:-}" ] || { echo "forbidden" >&2; exit 1; } ;;
   *"get ingress"*secretName*) printf 'web-webapp-tls' ;;
   *"get certificate"*) printf '%s' "${STUB_CERT_READY-True}" ;;
   *"get hpa"*metadata.name*) printf 'web-webapp' ;;
   *"get hpa"*currentMetrics*) printf '%s' "${STUB_HPA_METRICS-Resource}" ;;
-  *"-n ingress get svc traefik"*) printf '%s' "${STUB_LB-203.0.113.50}" ;;
+  *"-n "*" get svc traefik"*) printf '%s' "${STUB_LB-203.0.113.50}" ;;
 esac
 EOF
 cat >"$work/bin/curl" <<'EOF'
@@ -117,6 +119,13 @@ called "  the namespace is labelled to enforce them and the restricted Pod Secur
 before "  policies come before the issuers" "policies/admission" "upgrade --install issuers"
 before "  the namespace is labelled before the app is installed" "label namespace web-dev" "upgrade --install web"
 not_called "  no image tag override unless asked" "image.tag"
+called_re "  the namespace gets its quota, limit range and network rules" 'apply -n web-dev -f .*/policies/namespace/'
+before "  the namespace rules come before the app" "policies/namespace" "upgrade --install web"
+before "  and after the namespace is labelled" "label namespace web-dev" "policies/namespace"
+called "  the app's network policy admits the default ingress namespace" "networkPolicy.ingressNamespace=ingress"
+called "  the load balancer is looked up in that namespace" "-n ingress get svc traefik"
+not_called "  no monitoring objects without the Prometheus Operator" "metrics.serviceMonitor.enabled"
+contains "  and the summary says so" "| monitoring | not installed |"
 called_re "  cloud values first, then environment values (later files win)" 'values-eks\.yaml .*-f .*values-dev\.yaml'
 called "  host from cloud, environment and domain" "ingress.host=web-dev.aws.example.test"
 called "  dev gets self-signed TLS" "ingress.tls.clusterIssuer=selfsigned"
@@ -135,6 +144,13 @@ called "  values-aks.yaml" "values-aks.yaml"
 called "  host has the cloud in it" "web-dev.azure.example.test"
 expect "gcp uses the GKE values" 0 env KUBE_CONTEXT=mc-gke "$script" gcp dev
 called "  values-gke.yaml" "values-gke.yaml"
+expect "the ingress controller's namespace can be chosen" 0 env KUBE_CONTEXT=mc-eks INGRESS_NAMESPACE=traefik "$script" aws dev
+called "  the network policy admits it" "networkPolicy.ingressNamespace=traefik"
+called "  and the load balancer is looked up there" "-n traefik get svc traefik"
+expect "the Prometheus Operator is detected" 0 env KUBE_CONTEXT=mc-eks STUB_MONITORING=1 "$script" aws dev
+called "  the ServiceMonitor is enabled" "metrics.serviceMonitor.enabled=true"
+called "  and the alerts" "metrics.rules.enabled=true"
+contains "  and the summary says so" "| monitoring | scraped, alerts loaded |"
 expect "an image tag can be chosen" 0 env KUBE_CONTEXT=mc-eks IMAGE_TAG=6.16.0 "$script" aws dev
 called "  as a string, so 6.16 is not a number" "--set-string image.tag=6.16.0"
 expect "ingress address and port can be given" 0 env KUBE_CONTEXT=mc-eks INGRESS_ADDRESS=10.0.0.5 INGRESS_HTTPS_PORT=30443 "$script" aws dev
@@ -169,6 +185,9 @@ not_called "  before installing anything" "helm "
 expect "policies that cannot be applied fail the deploy" 1 env KUBE_CONTEXT=mc-eks STUB_POLICY_FAIL=1 "$script" aws dev
 contains "  and name the Kubernetes version they need" "1.30"
 not_called "  before anything is installed" "helm "
+expect "namespace rules that cannot be applied fail the deploy" 1 env KUBE_CONTEXT=mc-eks STUB_NAMESPACE_RULES_FAIL=1 "$script" aws dev
+contains "  and say what failed" "quota and network rules"
+not_called "  before the app is installed" "upgrade --install web"
 expect "a failing helm test fails the deploy" 1 env KUBE_CONTEXT=mc-eks STUB_HELM_TEST_FAIL=1 "$script" aws dev
 expect "a dev certificate that never becomes ready fails" 1 env KUBE_CONTEXT=mc-eks STUB_CERT_READY=False "$script" aws dev
 contains "  and says what it waited for" "to become Ready"

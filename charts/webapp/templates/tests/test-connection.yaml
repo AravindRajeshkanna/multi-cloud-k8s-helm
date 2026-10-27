@@ -4,7 +4,10 @@ kind: Pod
 metadata:
   name: {{ include "webapp.fullname" . }}-test
   labels:
-    {{- include "webapp.labels" . | nindent 4 }}
+    helm.sh/chart: {{ include "webapp.chart" . }}
+    {{- include "webapp.testSelectorLabels" . | nindent 4 }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
   annotations:
     "helm.sh/hook": test
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
