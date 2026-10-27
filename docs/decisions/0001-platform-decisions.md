@@ -25,7 +25,7 @@ Three clusters total: `mc-eks`, `mc-aks`, `mc-gke`. Environments (dev, staging, 
 
 ### 3. Delivery: plain Helm + CI
 
-Workloads are installed with `helm upgrade --install` from GitHub Actions. No Argo CD / Flux until Phase 5 reopens the question.
+Workloads are installed with `helm upgrade --install` from GitHub Actions. No Argo CD / Flux until Phase 5 reopens the question. The Helm client version (Helm 4) and how it is pinned are in [ADR 0004](0004-helm-client.md).
 
 ### 4. Infrastructure as code: Terraform
 

@@ -1,0 +1,117 @@
+name: Helm check
+
+# Proves the pinned Helm client works against each live cluster, the same way
+# the deploy pipeline will use it: OIDC login, this runner allowed through to
+# the cluster API, a kubeconfig whose context is the cluster's name, then
+# `helm --kube-context`. Read-only: it lists releases and installs nothing.
+#
+# The cluster has to be up first (Clusters workflow, action "up"). Helm is
+# installed at the version in .tool-versions (docs/decisions/0004-helm-client.md).
+# Runner access and credentials work as in terraform.yml; see docs/helm.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        description: Which cluster(s) to check
+        type: choice
+        options: [aws, azure, gcp, all]
+        required: true
+
+permissions:
+  contents: read
+  id-token: write # request the OIDC token exchanged for cloud credentials
+
+jobs:
+  preflight:
+    name: check request
+    runs-on: ubuntu-latest
+    steps:
+      # The runner's IP is added to the cluster's API allow-list, which changes
+      # the cluster, so this runs only from reviewed code on main.
+      - name: Require main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != refs/heads/main ]; then
+            echo "::error::Helm check only runs from main (this run is on $REF)."
+            exit 1
+          fi
+
+  helm:
+    name: helm ${{ matrix.cloud }}
+    needs: preflight
+    runs-on: ${{ vars.TF_RUNNER || 'ubuntu-latest' }}
+    environment: ${{ matrix.cloud }}
+    strategy:
+      fail-fast: false
+      matrix:
+        cloud: ${{ fromJSON(inputs.cloud == 'all' && '["aws","azure","gcp"]' || format('["{0}"]', inputs.cloud)) }}
+    # Its own group: GitHub keeps one pending run per group, and a check must
+    # never push a pending `down` out of the Clusters workflow's queue. Run it
+    # after `up` has finished; during one the add-ons will not be there yet.
+    concurrency:
+      group: helm-check-${{ matrix.cloud }}
+      cancel-in-progress: false
+    env:
+      # cluster-ops.sh falls back to mc-eks / mc-aks / mc-gke and the default
+      # region when these are empty.
+      CLUSTER_NAME: ${{ vars.CLUSTER_NAME }}
+      CLOUD_REGION: ${{ vars.CLOUD_REGION }}
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/cloud-login
+        with:
+          cloud: ${{ matrix.cloud }}
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.CLOUD_REGION || 'us-east-1' }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          gcp-workload-identity-provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          gcp-service-account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: azure/setup-helm@v5
+        with:
+          version-file: .tool-versions
+
+      # A hosted runner has a new IP every run. A custom runner (TF_RUNNER) is
+      # expected to be inside the network or already listed in API_AUTHORIZED_CIDRS.
+      - name: Allow this runner to reach the cluster API
+        if: vars.TF_RUNNER == ''
+        env:
+          CLOUD: ${{ matrix.cloud }}
+        run: |
+          ip=$(curl -fsS --max-time 20 https://checkip.amazonaws.com | tr -d '[:space:]')
+          case "$ip" in
+            '' | *[!0-9.]*) echo "::error::Could not determine this runner's public IP"; exit 1 ;;
+          esac
+          scripts/cluster-ops.sh allow-ip "$CLOUD" "${ip}/32"
+
+      - name: Connect (kubeconfig with a context named after the cluster)
+        env:
+          CLOUD: ${{ matrix.cloud }}
+        run: |
+          kubeconfig=$(scripts/cluster-ops.sh kubeconfig "$CLOUD")
+          echo "KUBECONFIG=${kubeconfig}" >> "$GITHUB_ENV"
+          echo "KUBE_CONTEXT=$(kubectl --kubeconfig "$kubeconfig" config current-context)" >> "$GITHUB_ENV"
+
+      - name: Helm client and releases
+        run: |
+          helm version
+          helm --kube-context "$KUBE_CONTEXT" list --all-namespaces
+
+      - name: Check the platform add-ons are deployed
+        env:
+          CLOUD: ${{ matrix.cloud }}
+        run: |
+          status=0
+          table=$(scripts/cluster-ops.sh addons "$CLOUD") || status=$?
+          {
+            echo "### ${CLOUD}: Helm $(helm version --template '{{.Version}}'), context \`${KUBE_CONTEXT}\`"
+            echo
+            printf '%s\n' "$table"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"

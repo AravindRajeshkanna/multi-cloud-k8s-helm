@@ -10,7 +10,8 @@ One set of Helm charts, three managed Kubernetes services. The clusters are prov
 |-------|--|--|
 | 0 | Prerequisites & foundations | done |
 | 1 | Provision clusters (Terraform, all three clouds) | implemented — validated, **not yet applied to real accounts** |
-| 2–6 | Helm setup, portable charts, deployment, CI/CD & GitOps, operations | planned |
+| 2 | Install & configure Helm (Helm 4 pinned, contexts, repos, live-cluster check) | implemented — **check not yet run against real clusters** |
+| 3–6 | Portable charts, deployment, CI/CD & GitOps, operations | planned |
 
 Full plan with per-phase status: [docs/roadmap](docs/roadmap/README.md).
 
@@ -22,10 +23,12 @@ docs/
   decisions/        architecture decision records
   github-secrets.md how to set up cloud credentials for GitHub Actions
   cost-control.md   taking clusters down and up from CI, and checking nothing keeps billing
+  helm.md           using Helm 4 with the three clusters (contexts, repos, the Helm check)
   licenses.md       licensing of this repo and its dependencies
 infra/              Phase 1: Terraform for EKS, AKS, GKE (+ runbook in infra/README.md)
-scripts/            check-prereqs.sh, cluster-ops.sh (drain / audit / allow-ip) and its tests
-.github/workflows/  ci.yml, terraform.yml (plan / up / down), cost-guard.yml (nightly check)
+scripts/            check-prereqs.sh, cluster-ops.sh (drain / audit / allow-ip / kubeconfig / addons) and its tests
+.github/workflows/  ci.yml, terraform.yml (plan / up / down), cost-guard.yml (nightly check), helm-check.yml
+.tool-versions      the pinned Helm version CI installs
 ```
 
 ## Quick start
@@ -33,7 +36,8 @@ scripts/            check-prereqs.sh, cluster-ops.sh (drain / audit / allow-ip) 
 ```sh
 make prereqs     # check your toolchain
 make validate    # terraform validate all three roots, no credentials needed
-make test        # offline tests for the teardown scripts
+make test        # offline tests for the cluster scripts
+make helm-repos  # add the chart repositories the platform add-ons come from
 ```
 
 Then, to build a cluster: set up credentials and state storage ([docs/github-secrets.md](docs/github-secrets.md)) and follow [infra/README.md](infra/README.md).
@@ -53,6 +57,7 @@ gh workflow run terraform.yml -f cloud=all -f action=up                         
 
 - Standard clusters (you own the node pools), one cluster per cloud, namespaces for environments.
 - Plain Helm driven from CI; GitOps is reconsidered in Phase 5.
+- Helm 4, pinned in `.tool-versions`; the cluster is always chosen with `--kube-context` ([ADR 0004](docs/decisions/0004-helm-client.md), [docs/helm.md](docs/helm.md)).
 - GitHub → cloud authentication through OIDC; no long-lived cloud keys in GitHub.
 - Traefik as the common ingress controller, because ingress-nginx is retired ([ADR 0002](docs/decisions/0002-ingress-controller.md)).
 

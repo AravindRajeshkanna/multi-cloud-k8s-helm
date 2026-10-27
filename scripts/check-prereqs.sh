@@ -67,6 +67,19 @@ if command -v terraform >/dev/null 2>&1; then
   fi
 fi
 
+# Helm 4 is the client this repo targets (docs/decisions/0004-helm-client.md);
+# .tool-versions holds the version CI installs.
+if command -v helm >/dev/null 2>&1; then
+  helm_version=$(helm version --template '{{.Version}}' 2>/dev/null | sed -E 's/^v//; s/[^0-9.].*$//')
+  helm_pinned=$(awk '$1 == "helm" { print $2 }' "$(dirname "$0")/../.tool-versions" 2>/dev/null)
+  if [ -n "$helm_version" ] && ! version_ge "$helm_version" "4.0.0"; then
+    printf '  TOO OLD  helm       %s found, >= 4.0.0 required (Helm 3 is security-fixes-only until 2027-02-10)\n' "$helm_version"
+    missing=1
+  elif [ -n "$helm_version" ] && [ -n "$helm_pinned" ] && ! version_ge "$helm_version" "$helm_pinned"; then
+    printf '  note     helm       CI uses %s, you have %s; each Helm supports a window of Kubernetes versions (docs/helm.md)\n' "$helm_pinned" "$helm_version"
+  fi
+fi
+
 echo
 if [ "$missing" -ne 0 ]; then
   echo "Some required tools are missing or too old. See docs/roadmap/phase-0-prerequisites.md."
