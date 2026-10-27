@@ -145,8 +145,12 @@ sized() { # <cpu request> <memory request> <memory limit>: the compliant pod wit
   pod "$good_image" | jq --arg cr "$1" --arg mr "$2" --arg ml "$3" '.spec.containers[0].resources = {requests: {cpu: $cr, memory: $mr}, limits: {memory: $ml}}'
 }
 admitted "a modestly sized pod is admitted" "$on" "$(sized 100m 128Mi 256Mi)"
-denied "a container above the limit range's maximum is refused" "maximum memory usage per Container" "$on" "$(sized 100m 128Mi 4Gi)"
-denied "a container below the limit range's minimum is refused" "minimum cpu usage per Container" "$on" "$(sized 1m 128Mi 256Mi)"
+# 16Mi requested and 256Mi allowed is a ratio of 16; the limit range allows 4.
+denied "a limit far above the request is refused by the limit range" "limit to request ratio" "$on" "$(sized 100m 16Mi 256Mi)"
+# The limit range must not fill in what a pod left out: that would defeat the
+# policy requiring pods to declare their resources. (Tested above as "no resources
+# is refused"; this names the reason it matters.)
+denied "a pod that declares nothing is still refused, not given defaults" "workloads-require-resources" "$on" "$(pod "$good_image" | jq 'del(.spec.containers[0].resources)')"
 # Three containers of 1500Mi are each within the limit range, but 4.5Gi in total
 # is over the namespace's 4Gi of requested memory.
 over_quota=$(pod "$good_image" | jq --arg image "$good_image" '.spec.containers = [range(3) as $i | {

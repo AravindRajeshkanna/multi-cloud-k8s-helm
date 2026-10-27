@@ -10,3 +10,11 @@
 registry.k8s.io/metrics-server/metrics-server:v0.9.0 | GO-2026-6612 | 2026-12-11 | Fixed in Go 1.26.9 and golang.org/x/net 0.60.0; this build has Go 1.26.4 and x/net 0.56.0. v0.9.0 (2026-07-13) is the newest metrics-server release and chart 3.14.0 the newest chart (checked 2026-10-27), so there is nothing to bump to.
 registry.k8s.io/autoscaling/cluster-autoscaler:v1.35.2 | GHSA-p77j-4mvh-x3m3 | 2026-12-11 | Fixed in grpc 1.79.3; this build has 1.75.0. v1.35.2 (2026-07-23) is the newest 1.35.x release (checked 2026-10-27; the bump from 1.35.0 already cut High findings from 38 to 26), and the cluster runs Kubernetes 1.35.
 registry.k8s.io/autoscaling/cluster-autoscaler:v1.35.2 | GO-2026-6612 | 2026-12-11 | Fixed in Go 1.26.9 and golang.org/x/net 0.60.0; this build has Go 1.25.12 and x/net 0.49.0. Same reason as above: no newer 1.35.x release exists.
+
+# The optional monitoring stack (var.enable_monitoring). Each is the newest upstream
+# release as of 2026-10-27, and the same Go advisory as above.
+registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0 | GO-2026-6612 | 2026-12-11 | Fixed in Go 1.26.9 and golang.org/x/net 0.60.0; this build has Go 1.26.6 and x/net 0.57.0. v2.20.0 (2026-08-18) is the newest release (checked 2026-10-27).
+quay.io/prometheus/node-exporter:v1.12.1-distroless | GO-2026-6612 | 2026-12-11 | Fixed in Go 1.26.9; this build has Go 1.26.5. v1.12.1 (2026-07-14) is the newest release (checked 2026-10-27).
+quay.io/thanos/thanos:v0.42.5 | GO-2026-6612 | 2026-12-11 | Fixed in golang.org/x/net 0.60.0; this build has 0.56.0. v0.42.5 (2026-10-27) is the newest release (checked 2026-10-27).
+ghcr.io/jkroepke/kube-webhook-certgen:1.11.0 | GO-2026-6612 | 2026-12-11 | Fixed in golang.org/x/net 0.60.0; this build has 0.59.0. v1.11.0 (2026-10-14) is the newest release (checked 2026-10-27).
+quay.io/kiwigrid/k8s-sidecar:2.14.1 | GHSA-6q48-6c7w-9gw2 | 2026-12-11 | Python certifi fixed in 2026.10.18; this build has 2026.7.22. 2.14.1 (2026-10-08) is the newest release (checked 2026-10-27).

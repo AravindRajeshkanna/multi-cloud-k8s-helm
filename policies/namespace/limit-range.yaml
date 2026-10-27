@@ -1,7 +1,14 @@
-# Bounds for a single container. There are deliberately no defaults here: a
-# LimitRange default would fill in missing requests and limits, and the
-# admission policy that requires containers to declare them (workloads-require-
-# resources) would then pass without the author ever choosing a value.
+# Keeps the shape of one container's resources sane: its limit may be at most 4x
+# its memory request and 10x its CPU request. Without a ratio, a tiny request with
+# a huge limit gets scheduled anywhere and then starves its neighbours.
+#
+# Why a ratio and not min / max: Kubernetes turns a LimitRange's max into the
+# DEFAULT limit, and its min into the DEFAULT request. That silently fills in
+# whatever a pod forgot to declare and defeats the admission policy that requires
+# containers to declare their own resources (workloads-require-resources). The CI
+# test for that policy caught exactly this: with min and max here, pods with no
+# resources at all were admitted with a 2Gi limit. A ratio sets no defaults.
+#
 # Applied into each workload namespace by scripts/deploy.sh.
 apiVersion: v1
 kind: LimitRange
@@ -10,9 +17,6 @@ metadata:
 spec:
   limits:
     - type: Container
-      min:
-        cpu: 5m
-        memory: 8Mi
-      max:
-        cpu: "2"
-        memory: 2Gi
+      maxLimitRequestRatio:
+        memory: "4"
+        cpu: "10"

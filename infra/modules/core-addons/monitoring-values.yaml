@@ -50,6 +50,10 @@ prometheus:
 
 grafana:
   enabled: true
+  # The chart's default is 13.2.4. 13.2.5 (2026-10-27) fixes four CVEs, so it is set
+  # here until a chart release picks it up.
+  image:
+    tag: 13.2.5-distroless
   # Empty makes the chart generate a random admin password (it does by default in
   # chart 92.14.1; older releases shipped a fixed one, so this is stated rather than
   # assumed). Read it with:
