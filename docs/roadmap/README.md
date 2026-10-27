@@ -14,11 +14,11 @@ This is a practical, phased path that works across all three managed Kubernetes 
 | [3](phase-3-portable-helm-charts.md) | Design Portable Helm Charts | **Implemented, not yet deployed to real clusters** — `webapp` and `cluster-issuers` charts, tested by rendering and on a kind cluster |
 | [4](phase-4-deploy-workloads.md) | Deploy Workloads | **Implemented, not yet run on real clusters** — `deploy.sh`, Deploy workflow, `deploy` option on `up`; shared services and External Secrets deferred |
 | [5](phase-5-cicd-gitops.md) | CI/CD & GitOps | **Partly built, partly decided** — admission policies, image scan + SBOM, pre-commit hook, `image_tag`; GitOps reconsidered and not adopted; registries, progressive delivery and PR-time plan deferred |
-| [6](phase-6-observability-security-operations.md) | Observability, Security & Operations | Not started |
+| [6](phase-6-observability-security-operations.md) | Observability, Security & Operations | **Partly built, partly deliberately left** — namespace quota and network rules, optional Prometheus + Grafana, operations guide; Entra RBAC, private endpoints, Velero and others left with reasons |
 
 ## Decisions that shape every phase
 
-Recorded in [ADR 0001](../decisions/0001-platform-decisions.md), [ADR 0002](../decisions/0002-ingress-controller.md), [ADR 0003](../decisions/0003-teardown-and-cost-control.md), [ADR 0004](../decisions/0004-helm-client.md), [ADR 0005](../decisions/0005-chart-portability.md), [ADR 0006](../decisions/0006-deployment-model.md), [ADR 0007](../decisions/0007-delivery-strategy.md) and [ADR 0008](../decisions/0008-policy-and-supply-chain.md):
+Recorded in [ADR 0001](../decisions/0001-platform-decisions.md), [ADR 0002](../decisions/0002-ingress-controller.md), [ADR 0003](../decisions/0003-teardown-and-cost-control.md), [ADR 0004](../decisions/0004-helm-client.md), [ADR 0005](../decisions/0005-chart-portability.md), [ADR 0006](../decisions/0006-deployment-model.md), [ADR 0007](../decisions/0007-delivery-strategy.md), [ADR 0008](../decisions/0008-policy-and-supply-chain.md) and [ADR 0009](../decisions/0009-hardening-and-operations.md):
 
 - **Cluster mode:** Standard (we own the node pools) on all three clouds.
 - **Topology:** one cluster per cloud, with namespaces separating environments.
@@ -27,6 +27,7 @@ Recorded in [ADR 0001](../decisions/0001-platform-decisions.md), [ADR 0002](../d
 - **Charts:** one chart per workload; clouds differ in values files only, and templates name no cloud.
 - **Deployment:** one script (`scripts/deploy.sh`) from `main`, validated against the real load balancer; `dev` needs no domain, `prod` does.
 - **Delivery strategy:** still CI-driven; GitOps reconsidered and not adopted because a reconciler would fight the teardown drain ([ADR 0007](../decisions/0007-delivery-strategy.md)).
+- **Hardening and operations:** each workload namespace has a quota and default-deny network rules; monitoring is optional and off by default; recovery is a rebuild ([ADR 0009](../decisions/0009-hardening-and-operations.md)).
 - **Policy and supply chain:** native admission policies plus Pod Security, and SHA-pinned image scanning ([ADR 0008](../decisions/0008-policy-and-supply-chain.md)).
 - **Ingress:** Traefik, because ingress-nginx was retired in March 2026.
 - **Cost:** destroy and recreate from CI rather than idle; see [ADR 0003](../decisions/0003-teardown-and-cost-control.md) and [cost-control.md](../cost-control.md).
