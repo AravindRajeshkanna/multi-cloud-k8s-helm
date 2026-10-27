@@ -1,0 +1,53 @@
+name: Cloud login
+description: Exchange the GitHub OIDC token for short-lived credentials on one cloud. The calling job must grant the id-token write permission.
+
+inputs:
+  cloud:
+    description: aws, azure or gcp
+    required: true
+  aws-role-arn:
+    description: Role to assume (aws)
+    required: false
+  aws-region:
+    description: Region for the AWS session (aws)
+    required: false
+  azure-client-id:
+    description: App registration client ID (azure)
+    required: false
+  azure-tenant-id:
+    description: Directory tenant ID (azure)
+    required: false
+  azure-subscription-id:
+    description: Subscription ID (azure)
+    required: false
+  gcp-workload-identity-provider:
+    description: Full resource name of the workload identity provider (gcp)
+    required: false
+  gcp-service-account:
+    description: Service account to impersonate (gcp)
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Authenticate to AWS
+      if: inputs.cloud == 'aws'
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        role-to-assume: ${{ inputs.aws-role-arn }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Authenticate to Azure
+      if: inputs.cloud == 'azure'
+      uses: azure/login@v3
+      with:
+        client-id: ${{ inputs.azure-client-id }}
+        tenant-id: ${{ inputs.azure-tenant-id }}
+        subscription-id: ${{ inputs.azure-subscription-id }}
+
+    - name: Authenticate to Google Cloud
+      if: inputs.cloud == 'gcp'
+      uses: google-github-actions/auth@v3
+      with:
+        workload_identity_provider: ${{ inputs.gcp-workload-identity-provider }}
+        service_account: ${{ inputs.gcp-service-account }}

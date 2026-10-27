@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terraform-fmt:
+    name: terraform fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "~1.14"
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive -diff infra
+
+  terraform-validate:
+    name: terraform validate (${{ matrix.dir }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [aws-eks, azure-aks, gcp-gke]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "~1.14"
+          terraform_wrapper: false
+      - name: Init (no backend, no credentials)
+        run: terraform -chdir=infra/${{ matrix.dir }} init -backend=false -input=false
+      - name: Validate
+        run: terraform -chdir=infra/${{ matrix.dir }} validate
+
+  scripts:
+    name: shellcheck and script tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: shellcheck scripts/*.sh
+      - name: Offline tests for cluster-ops.sh (cloud CLIs stubbed)
+        run: scripts/test-cluster-ops.sh

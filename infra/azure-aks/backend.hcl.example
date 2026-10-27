@@ -1,0 +1,5 @@
+resource_group_name  = "my-org-tfstate-rg"
+storage_account_name = "myorgtfstate"
+container_name       = "tfstate"
+key                  = "multi-cloud-k8s-helm/azure-aks.tfstate"
+use_azuread_auth     = true

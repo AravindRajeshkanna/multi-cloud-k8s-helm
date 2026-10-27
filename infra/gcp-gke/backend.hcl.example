@@ -1,0 +1,2 @@
+bucket = "my-org-tfstate-gcp"
+prefix = "multi-cloud-k8s-helm/gcp-gke"

@@ -1,0 +1,247 @@
+name: Clusters (plan / up / down)
+
+# Manual control of the clusters. Cloud access uses OIDC federation: no
+# long-lived cloud keys are stored in GitHub. Setup: docs/github-secrets.md.
+#
+#   plan  show what would change
+#   up    create or update the cluster(s) and platform add-ons
+#   down  tear everything down so nothing keeps billing, then verify
+#
+# Choose cloud "all" to act on EKS, AKS and GKE in one run. Each cloud has a
+# GitHub Environment named aws / azure / gcp holding its secrets and variables;
+# add required reviewers to an environment to gate runs against it.
+# How teardown works and what it leaves behind: docs/cost-control.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        description: Which cluster(s) to act on
+        type: choice
+        options: [aws, azure, gcp, all]
+        required: true
+      action:
+        description: plan, up (apply) or down (destroy). up and down run from main only.
+        type: choice
+        options: [plan, up, down]
+        default: plan
+      confirm:
+        description: For down, type "destroy" to confirm
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  id-token: write # request the OIDC token exchanged for cloud credentials
+
+jobs:
+  preflight:
+    name: check request
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate request
+        env:
+          ACTION: ${{ inputs.action }}
+          CONFIRM: ${{ inputs.confirm }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$ACTION" != plan ] && [ "$REF" != refs/heads/main ]; then
+            echo "::error::'$ACTION' only runs from main (this run is on $REF)."
+            exit 1
+          fi
+          if [ "$ACTION" = down ] && [ "$CONFIRM" != destroy ]; then
+            echo "::error::To tear down, set the confirm input to: destroy"
+            exit 1
+          fi
+
+  terraform:
+    name: ${{ inputs.action }} ${{ matrix.cloud }}
+    needs: preflight
+    # The cluster API must be reachable from the runner. On the default hosted
+    # runner this run's IP is added to the allow-list (see "Resolve settings").
+    # For a tighter setup point TF_RUNNER at a static-IP or self-hosted runner
+    # and list its egress in API_AUTHORIZED_CIDRS (see infra/README.md).
+    runs-on: ${{ vars.TF_RUNNER || 'ubuntu-latest' }}
+    environment: ${{ matrix.cloud }}
+    strategy:
+      fail-fast: false
+      matrix:
+        cloud: ${{ fromJSON(inputs.cloud == 'all' && '["aws","azure","gcp"]' || format('["{0}"]', inputs.cloud)) }}
+    # One run per cloud at a time, so a state lock is never fought over.
+    concurrency:
+      group: terraform-${{ matrix.cloud }}
+      cancel-in-progress: false
+    env:
+      WORKDIR: infra/${{ fromJSON('{"aws":"aws-eks","azure":"azure-aks","gcp":"gcp-gke"}')[matrix.cloud] }}
+      TF_IN_AUTOMATION: "true"
+      # Terraform ignores TF_VAR_* names a root does not declare, so the
+      # per-cloud values can all be set here.
+      TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+      # CI owns teardown (guarded by the confirm input), so GKE's own
+      # deletion protection would only get in the way of `down`.
+      TF_VAR_deletion_protection: "false"
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve settings
+        id: resolve
+        env:
+          CLOUD: ${{ matrix.cloud }}
+          REGION_OVERRIDE: ${{ vars.CLOUD_REGION }}
+          NAME_OVERRIDE: ${{ vars.CLUSTER_NAME }}
+          CONFIGURED_CIDRS: ${{ vars.API_AUTHORIZED_CIDRS || '[]' }}
+          CUSTOM_RUNNER: ${{ vars.TF_RUNNER }}
+        run: |
+          case "$CLOUD" in
+            aws)   region=us-east-1;    name=mc-eks ;;
+            azure) region=eastus;       name=mc-aks ;;
+            gcp)   region=us-central1;  name=mc-gke ;;
+          esac
+          region=${REGION_OVERRIDE:-$region}
+          name=${NAME_OVERRIDE:-$name}
+
+          # A GitHub-hosted runner gets a new IP every run, so it is added to
+          # the API allow-list for this run. A custom runner (TF_RUNNER) is
+          # expected to be inside the network or to have its egress listed in
+          # API_AUTHORIZED_CIDRS already.
+          cidrs=$CONFIGURED_CIDRS
+          if [ -z "$CUSTOM_RUNNER" ]; then
+            ip=$(curl -fsS --max-time 20 https://checkip.amazonaws.com | tr -d '[:space:]')
+            case "$ip" in
+              '' | *[!0-9.]*) echo "::error::Could not determine this runner's public IP"; exit 1 ;;
+            esac
+            cidrs=$(jq -c --arg c "${ip}/32" '. + [$c] | unique' <<<"$CONFIGURED_CIDRS")
+            echo "runner_cidr=${ip}/32" >> "$GITHUB_OUTPUT"
+          fi
+
+          {
+            echo "CLOUD_REGION=${region}"
+            echo "CLUSTER_NAME=${name}"
+            echo "TF_VAR_region=${region}"
+            echo "TF_VAR_location=${region}"
+            echo "TF_VAR_cluster_name=${name}"
+            echo "TF_VAR_api_authorized_cidrs=${cidrs}"
+          } >> "$GITHUB_ENV"
+
+      - uses: ./.github/actions/cloud-login
+        with:
+          cloud: ${{ matrix.cloud }}
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.CLOUD_REGION || 'us-east-1' }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          gcp-workload-identity-provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          gcp-service-account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "~1.14"
+          terraform_wrapper: false
+
+      # --- init: state backend settings come from environment variables ---
+      - name: Init (aws)
+        if: matrix.cloud == 'aws'
+        working-directory: ${{ env.WORKDIR }}
+        env:
+          STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${STATE_BUCKET}" \
+            -backend-config="region=${CLOUD_REGION}" \
+            -backend-config="key=multi-cloud-k8s-helm/aws-eks/terraform.tfstate" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Init (azure)
+        if: matrix.cloud == 'azure'
+        working-directory: ${{ env.WORKDIR }}
+        env:
+          STATE_RG: ${{ vars.TF_STATE_RESOURCE_GROUP }}
+          STATE_ACCOUNT: ${{ vars.TF_STATE_STORAGE_ACCOUNT }}
+          STATE_CONTAINER: ${{ vars.TF_STATE_CONTAINER || 'tfstate' }}
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=${STATE_RG}" \
+            -backend-config="storage_account_name=${STATE_ACCOUNT}" \
+            -backend-config="container_name=${STATE_CONTAINER}" \
+            -backend-config="key=multi-cloud-k8s-helm/azure-aks.tfstate" \
+            -backend-config="use_azuread_auth=true"
+
+      - name: Init (gcp)
+        if: matrix.cloud == 'gcp'
+        working-directory: ${{ env.WORKDIR }}
+        env:
+          STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${STATE_BUCKET}" \
+            -backend-config="prefix=multi-cloud-k8s-helm/gcp-gke"
+
+      # --- let this run's (new) IP reach an existing cluster's API server ---
+      # Not for plan, which must not change anything. A first `up` needs no
+      # help: the cluster is created with this runner's IP already allowed.
+      - name: Allow this runner to reach the cluster API
+        if: inputs.action != 'plan' && steps.resolve.outputs.runner_cidr != ''
+        run: scripts/cluster-ops.sh allow-ip "$CLOUD" "$RUNNER_CIDR"
+        env:
+          CLOUD: ${{ matrix.cloud }}
+          RUNNER_CIDR: ${{ steps.resolve.outputs.runner_cidr }}
+
+      # --- down: remove what Kubernetes created outside Terraform's knowledge ---
+      - name: Drain workloads (load balancers, volumes)
+        if: inputs.action == 'down'
+        run: scripts/cluster-ops.sh drain "$CLOUD"
+        env:
+          CLOUD: ${{ matrix.cloud }}
+
+      - name: Plan
+        working-directory: ${{ env.WORKDIR }}
+        env:
+          ACTION: ${{ inputs.action }}
+        run: |
+          if [ "$ACTION" = down ]; then
+            terraform plan -destroy -input=false -lock-timeout=5m -out=tfplan
+          else
+            terraform plan -input=false -lock-timeout=5m -out=tfplan
+          fi
+
+      - name: Apply
+        if: inputs.action != 'plan'
+        working-directory: ${{ env.WORKDIR }}
+        run: terraform apply -input=false -lock-timeout=5m tfplan
+
+      - name: Show kubeconfig command
+        if: inputs.action == 'up'
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          {
+            echo "### Connect to the ${CLOUD} cluster"
+            echo '```sh'
+            terraform output -raw kubeconfig_command
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          CLOUD: ${{ matrix.cloud }}
+
+      # --- down: prove nothing billable is left ---
+      - name: Verify nothing billable remains
+        if: inputs.action == 'down'
+        run: scripts/cluster-ops.sh audit --wait 300 "$CLOUD"
+        env:
+          CLOUD: ${{ matrix.cloud }}
+
+      - name: Teardown summary
+        if: inputs.action == 'down'
+        run: |
+          {
+            echo "### ${CLOUD}: torn down"
+            echo "Cluster, network, node pools and Kubernetes-created load balancers and volumes are gone, and the audit found nothing billable."
+            echo "Still present, by design: the Terraform state storage and the CI identity (see docs/cost-control.md)."
+            echo "Bring it back with: cloud = ${CLOUD}, action = up."
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          CLOUD: ${{ matrix.cloud }}

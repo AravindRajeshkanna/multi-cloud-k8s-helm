@@ -1,0 +1,101 @@
+name: Cost guard
+
+# Looks for clusters that are still running, so a forgotten cluster does not
+# bill for weeks. By default it only raises the alarm (the run fails, and
+# GitHub emails you). Set the repository variable AUTO_TEARDOWN to "true" and
+# it tears the cluster down instead.
+#
+# Note: an environment with required reviewers makes each run wait for approval,
+# so leave reviewers off the aws / azure / gcp environments if you use this.
+# Setup and caveats: docs/cost-control.md.
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # daily, 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # cloud login
+  actions: write # dispatch the teardown workflow
+
+jobs:
+  audit:
+    name: audit ${{ matrix.cloud }}
+    runs-on: ${{ vars.TF_RUNNER || 'ubuntu-latest' }}
+    environment: ${{ matrix.cloud }}
+    strategy:
+      fail-fast: false
+      matrix:
+        cloud: [aws, azure, gcp]
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve settings
+        env:
+          CLOUD: ${{ matrix.cloud }}
+          REGION_OVERRIDE: ${{ vars.CLOUD_REGION }}
+          NAME_OVERRIDE: ${{ vars.CLUSTER_NAME }}
+        run: |
+          case "$CLOUD" in
+            aws)   region=us-east-1;    name=mc-eks ;;
+            azure) region=eastus;       name=mc-aks ;;
+            gcp)   region=us-central1;  name=mc-gke ;;
+          esac
+          {
+            echo "CLOUD_REGION=${REGION_OVERRIDE:-$region}"
+            echo "CLUSTER_NAME=${NAME_OVERRIDE:-$name}"
+          } >> "$GITHUB_ENV"
+
+      - uses: ./.github/actions/cloud-login
+        with:
+          cloud: ${{ matrix.cloud }}
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.CLOUD_REGION || 'us-east-1' }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          gcp-workload-identity-provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          gcp-service-account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Look for billable resources
+        id: audit
+        env:
+          CLOUD: ${{ matrix.cloud }}
+        run: |
+          # Exit codes: 0 nothing found, 1 resources found, 2 the check itself failed.
+          set +e
+          findings=$(scripts/cluster-ops.sh audit "$CLOUD")
+          rc=$?
+          set -e
+          {
+            echo "### ${CLOUD}"
+            case $rc in
+              0) echo "Nothing billable found for \`${CLUSTER_NAME}\`." ;;
+              1) echo "Billable resources found for \`${CLUSTER_NAME}\`:"; echo '```'; echo "$findings"; echo '```' ;;
+              *) echo "The check failed; see the log." ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "rc=${rc}" >> "$GITHUB_OUTPUT"
+          [ "$rc" -le 1 ] || exit "$rc"
+
+      - name: Tear down (AUTO_TEARDOWN is on)
+        if: steps.audit.outputs.rc == '1' && vars.AUTO_TEARDOWN == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUD: ${{ matrix.cloud }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          gh workflow run terraform.yml --ref "$DEFAULT_BRANCH" \
+            -f "cloud=${CLOUD}" -f action=down -f confirm=destroy
+          echo "Teardown of ${CLOUD} requested; follow it under Actions." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Raise the alarm (AUTO_TEARDOWN is off)
+        if: steps.audit.outputs.rc == '1' && vars.AUTO_TEARDOWN != 'true'
+        env:
+          CLOUD: ${{ matrix.cloud }}
+        run: |
+          echo "::error::Billable ${CLOUD} resources are running. Run 'Clusters' with cloud=${CLOUD}, action=down to stop the charges, or set AUTO_TEARDOWN=true."
+          exit 1
