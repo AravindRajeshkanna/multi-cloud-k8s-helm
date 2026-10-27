@@ -83,7 +83,7 @@ The old flag names still work in Helm 4 with a deprecation warning, but scripts 
 
 ## 5. Deploying the charts
 
-The charts, their values files and the exact `helm upgrade --install` commands per cloud and environment are in [charts.md](charts.md).
+The charts, their values files and the exact `helm upgrade --install` commands per cloud and environment are in [charts.md](charts.md). Deploying them from CI, with validation, is in [deploying.md](deploying.md).
 
 ## 6. Checking Helm against the live clusters
 

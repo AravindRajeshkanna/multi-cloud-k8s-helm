@@ -9,8 +9,10 @@
 # What it proves that scripts/test-charts.sh cannot: the API server accepts the
 # manifests, the pods start and pass their probes under the hardened security
 # context, `helm test` passes, an upgrade from dev to prod values works, cert-manager
-# issues the certificate, and Traefik routes a request to the app. CI runs it
-# on a fresh kind cluster.
+# issues the certificate, and Traefik routes a request to the app. It ends by
+# running scripts/deploy.sh, the script the workflows use, against the cluster.
+# CI runs it on a fresh kind cluster. On a machine where the node's address is
+# not reachable from the host (Docker Desktop), set SKIP_INGRESS_SMOKE=1.
 #
 # Needs helm and kubectl. The cert-manager and Traefik versions are the ones
 # Terraform installs (infra/modules/core-addons/variables.tf).
@@ -49,10 +51,10 @@ if [ -z "$cert_manager_version" ] || [ -z "$traefik_version" ]; then
   die "cannot read the chart versions from infra/modules/core-addons/variables.tf"
 fi
 
-namespaces="cert-manager traefik-test web-eks web-aks web-gke web-prod"
+namespaces="cert-manager traefik-test web-eks web-aks web-gke web-prod web-dev"
 cleanup() {
   log "cleaning up"
-  for ns in web-eks web-aks web-gke web-prod; do h uninstall web -n "$ns" >/dev/null 2>&1 || true; done
+  for ns in web-eks web-aks web-gke web-prod web-dev; do h uninstall web -n "$ns" >/dev/null 2>&1 || true; done
   h uninstall issuers -n cert-manager >/dev/null 2>&1 || true
   h uninstall traefik -n traefik-test >/dev/null 2>&1 || true
   h uninstall cert-manager -n cert-manager >/dev/null 2>&1 || true
@@ -83,7 +85,7 @@ k wait --for=condition=Ready clusterissuer/selfsigned --timeout=120s
 
 log "Traefik $traefik_version (the ingress controller Phase 1 installs)"
 h upgrade --install traefik traefik --repo https://traefik.github.io/charts --version "$traefik_version" \
-  -n traefik-test --create-namespace --set service.type=ClusterIP --set deployment.replicas=1 --wait --timeout 5m
+  -n traefik-test --create-namespace --set service.type=NodePort --set deployment.replicas=1 --wait --timeout 5m
 [ -n "$(k get ingressclass traefik --ignore-not-found -o name)" ] || die "Traefik did not create the 'traefik' IngressClass the chart relies on"
 
 # --- every cloud's values file, on a node labelled the way that cloud's nodes are
@@ -138,5 +140,15 @@ h upgrade web "$app" -n "$ns" -f "$app/values-dev.yaml" --wait --timeout 5m
 for kind in hpa pdb ingress; do
   [ -z "$(k -n "$ns" get "$kind" -o name)" ] || die "the $kind should be gone after going back to dev values"
 done
+
+# --- the deploy script, as the workflows run it
+log "scripts/deploy.sh aws dev (the Deploy workflow's script)"
+k label nodes --all pool=default --overwrite >/dev/null
+node_ip=$(k get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+https_port=$(k -n traefik-test get svc traefik -o jsonpath='{.spec.ports[?(@.name=="websecure")].nodePort}')
+if [ -z "$node_ip" ] || [ -z "$https_port" ]; then
+  die "cannot find the node address and Traefik's HTTPS node port"
+fi
+KUBE_CONTEXT=$ctx INGRESS_ADDRESS=$node_ip INGRESS_HTTPS_PORT=$https_port "$here/deploy.sh" aws dev
 
 log "all chart tests passed"

@@ -62,9 +62,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/cloud-login
+      - uses: azure/setup-helm@v5
+        with:
+          version-file: .tool-versions
+
+      # Login, runner access to the cluster API and a kubeconfig named after the
+      # cluster. A custom runner (TF_RUNNER) is expected to be inside the network
+      # or already listed in API_AUTHORIZED_CIDRS.
+      - uses: ./.github/actions/cluster-access
         with:
           cloud: ${{ matrix.cloud }}
+          allow-runner-ip: ${{ vars.TF_RUNNER == '' }}
           aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.CLOUD_REGION || 'us-east-1' }}
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -72,31 +80,6 @@ jobs:
           azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           gcp-workload-identity-provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           gcp-service-account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-      - uses: azure/setup-helm@v5
-        with:
-          version-file: .tool-versions
-
-      # A hosted runner has a new IP every run. A custom runner (TF_RUNNER) is
-      # expected to be inside the network or already listed in API_AUTHORIZED_CIDRS.
-      - name: Allow this runner to reach the cluster API
-        if: vars.TF_RUNNER == ''
-        env:
-          CLOUD: ${{ matrix.cloud }}
-        run: |
-          ip=$(curl -fsS --max-time 20 https://checkip.amazonaws.com | tr -d '[:space:]')
-          case "$ip" in
-            '' | *[!0-9.]*) echo "::error::Could not determine this runner's public IP"; exit 1 ;;
-          esac
-          scripts/cluster-ops.sh allow-ip "$CLOUD" "${ip}/32"
-
-      - name: Connect (kubeconfig with a context named after the cluster)
-        env:
-          CLOUD: ${{ matrix.cloud }}
-        run: |
-          kubeconfig=$(scripts/cluster-ops.sh kubeconfig "$CLOUD")
-          echo "KUBECONFIG=${kubeconfig}" >> "$GITHUB_ENV"
-          echo "KUBE_CONTEXT=$(kubectl --kubeconfig "$kubeconfig" config current-context)" >> "$GITHUB_ENV"
 
       - name: Helm client and releases
         run: |

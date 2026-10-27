@@ -4,7 +4,8 @@ name: Clusters (plan / up / down)
 # long-lived cloud keys are stored in GitHub. Setup: docs/github-secrets.md.
 #
 #   plan  show what would change
-#   up    create or update the cluster(s) and platform add-ons
+#   up    create or update the cluster(s) and platform add-ons; with the
+#         "deploy" input also deploy the workloads onto them
 #   down  tear everything down so nothing keeps billing, then verify
 #
 # Choose cloud "all" to act on EKS, AKS and GKE in one run. Each cloud has a
@@ -29,6 +30,11 @@ on:
         description: For down, type "destroy" to confirm
         type: string
         required: false
+      deploy:
+        description: For up, also deploy the workloads (dev, or prod which needs APP_DOMAIN and ACME_EMAIL). none = infrastructure only.
+        type: choice
+        options: [none, dev, prod]
+        default: none
 
 permissions:
   contents: read
@@ -226,6 +232,29 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
         env:
           CLOUD: ${{ matrix.cloud }}
+
+      # --- up: bring the applications back too ---
+      # A new cluster starts empty. The same script and checks as the Deploy
+      # workflow (docs/deploying.md); this runner is already allowed to the API.
+      - uses: azure/setup-helm@v5
+        if: inputs.action == 'up' && inputs.deploy != 'none'
+        with:
+          version-file: .tool-versions
+
+      - name: Deploy workloads (${{ inputs.deploy }})
+        if: inputs.action == 'up' && inputs.deploy != 'none'
+        env:
+          CLOUD: ${{ matrix.cloud }}
+          DEPLOY_ENV: ${{ inputs.deploy }}
+          APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          SKIP_INGRESS_SMOKE: ${{ vars.SKIP_INGRESS_SMOKE }}
+        run: |
+          KUBECONFIG=$(scripts/cluster-ops.sh kubeconfig "$CLOUD")
+          export KUBECONFIG
+          KUBE_CONTEXT=$(kubectl config current-context)
+          export KUBE_CONTEXT
+          scripts/deploy.sh "$CLOUD" "$DEPLOY_ENV"
 
       # --- down: prove nothing billable is left ---
       - name: Verify nothing billable remains

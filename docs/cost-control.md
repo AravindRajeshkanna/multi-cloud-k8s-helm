@@ -9,14 +9,14 @@ Actions → **Clusters (plan / up / down)** → *Run workflow*:
 | Goal | `cloud` | `action` | `confirm` |
 |------|---------|----------|-----------|
 | Stop all charges | `all` (or one cloud) | `down` | `destroy` |
-| Bring it back | `all` (or one cloud) | `up` | — |
+| Bring it back | `all` (or one cloud) | `up` | — (add `deploy` = `dev` to put the applications back too) |
 | See what would change | any | `plan` | — |
 
 From a terminal:
 
 ```sh
 gh workflow run terraform.yml -f cloud=all -f action=down -f confirm=destroy
-gh workflow run terraform.yml -f cloud=all -f action=up
+gh workflow run terraform.yml -f cloud=all -f action=up -f deploy=dev   # applications included
 ```
 
 `up` and `down` only run from `main`. `down` refuses to start without `confirm=destroy`. With `cloud=all` the three clouds run in parallel and independently: one failing does not stop the others. `all` and the cost guard assume all three GitHub Environments are set up; if you only use some clouds, pick them individually and remove the others from `matrix.cloud` in [cost-guard.yml](../.github/workflows/cost-guard.yml).
@@ -46,11 +46,11 @@ For each selected cloud, in order:
 
 ### What is lost
 
-Everything inside the clusters. **Data on volumes is deleted** (that is the point), and nothing is backed up. Workloads you deploy later (Phase 4) have to be redeployed after `up`; that deploy step will be added to the pipeline when the charts exist. Only the platform add-ons (Traefik, cert-manager, metrics-server, Cluster Autoscaler) come back automatically.
+Everything inside the clusters. **Data on volumes is deleted** (that is the point), and nothing is backed up. A new cluster starts with only the platform add-ons (Traefik, cert-manager, metrics-server, Cluster Autoscaler). The applications come back with `up` and its `deploy` input, or with the Deploy workflow ([deploying.md](deploying.md)). For `prod`, the DNS record has to be updated too: a new cluster has a new load balancer address.
 
 ## What `up` does
 
-`terraform plan` and apply from scratch: network, cluster, node pools, add-ons. Roughly 10–20 minutes per cloud, in parallel. The run summary ends with the `kubeconfig` command for each cluster. The result is the same cluster as before, with the same names, but it is a **new** cluster: new endpoints, new load balancer address, nothing carried over.
+`terraform plan` and apply from scratch: network, cluster, node pools, add-ons. Roughly 10–20 minutes per cloud, in parallel. The run summary ends with the `kubeconfig` command for each cluster. The result is the same cluster as before, with the same names, but it is a **new** cluster: new endpoints, new load balancer address, nothing carried over. With `deploy` set, the run then deploys the applications and validates them ([deploying.md](deploying.md)).
 
 ## How the runner reaches the cluster
 

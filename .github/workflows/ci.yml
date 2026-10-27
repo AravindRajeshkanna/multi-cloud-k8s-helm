@@ -50,6 +50,8 @@ jobs:
       - run: shellcheck scripts/*.sh
       - name: Offline tests for cluster-ops.sh (cloud CLIs stubbed)
         run: scripts/test-cluster-ops.sh
+      - name: Offline tests for deploy.sh (helm, kubectl and curl stubbed)
+        run: scripts/test-deploy.sh
 
   charts:
     name: helm charts (lint, render, assertions)

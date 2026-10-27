@@ -141,6 +141,8 @@ echo "-- knobs"
 check "the image tag defaults to the chart's appVersion" "$base" '[.[]|select(.kind=="Deployment")|.spec.template.spec.containers[0].image]==["ghcr.io/stefanprodan/podinfo:'"$(grep '^appVersion:' "$app/Chart.yaml" | cut -d'"' -f2)"'"]'
 check "the image tag can be overridden" "$(render "$app" --set image.tag=1.2.3)" '[.[]|select(.kind=="Deployment")|.spec.template.spec.containers[0].image|endswith(":1.2.3")]==[true]'
 check "a probe can be left out" "$(render "$app" --set probes.startup=null)" '[.[]|select(.kind=="Deployment")|.spec.template.spec.containers[0]|has("startupProbe")]==[false]'
+secrets=$(render "$app" --set 'extraEnv[0].name=DB_PASSWORD' --set 'extraEnv[0].valueFrom.secretKeyRef.name=app-db' --set 'extraEnv[0].valueFrom.secretKeyRef.key=password' --set 'envFrom[0].secretRef.name=app-secrets')
+check "secrets are referenced by name, next to the plain env entries" "$secrets" '.[]|select(.kind=="Deployment")|.spec.template.spec.containers[0]|(.env|map(.name)|index("PODINFO_LEVEL") != null) and (.env|map(select(.name=="DB_PASSWORD"))[0].valueFrom.secretKeyRef == {"name":"app-db","key":"password"}) and (.envFrom==[{"secretRef":{"name":"app-secrets"}}])'
 check "the helm test pod is a test hook" "$base" '[.[]|select(.kind=="Pod")|.metadata.annotations["helm.sh/hook"]]==["test"]'
 check "the helm test can be turned off" "$(render "$app" --set test.enabled=false)" '[.[]|select(.kind=="Pod")]|length==0'
 

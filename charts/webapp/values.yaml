@@ -30,6 +30,19 @@ containerPort: 9898
 env:
   PODINFO_LEVEL: info
 
+# Anything that is not a plain string, above all values that come from a Secret.
+# Secrets are referenced, never written into values files or this repository;
+# docs/deploying.md#secrets says how they get into the cluster.
+#
+# extraEnv:
+#   - name: DB_PASSWORD
+#     valueFrom:
+#       secretKeyRef: {name: app-db, key: password}
+# envFrom:
+#   - secretRef: {name: app-secrets}
+extraEnv: []
+envFrom: []
+
 updateStrategy:
   type: RollingUpdate
   rollingUpdate:

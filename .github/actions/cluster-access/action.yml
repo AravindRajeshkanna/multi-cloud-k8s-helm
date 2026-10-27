@@ -1,0 +1,70 @@
+name: Cluster access
+description: Log in to a cloud with OIDC, let this runner through to the cluster API, and write a kubeconfig whose context is the cluster's name. Exports KUBECONFIG and KUBE_CONTEXT to later steps. The calling job must grant the id-token write permission and have checked out the repository.
+
+inputs:
+  cloud:
+    description: aws, azure or gcp
+    required: true
+  allow-runner-ip:
+    description: >-
+      "true" to add this runner's public IP to the cluster's API allow-list (a
+      GitHub-hosted runner has a new IP every run). Use "false" for a custom
+      runner (TF_RUNNER) that is inside the network or already listed.
+    required: false
+    default: "true"
+  aws-role-arn:
+    description: Role to assume (aws)
+    required: false
+  aws-region:
+    description: Region for the AWS session (aws)
+    required: false
+  azure-client-id:
+    description: App registration client ID (azure)
+    required: false
+  azure-tenant-id:
+    description: Directory tenant ID (azure)
+    required: false
+  azure-subscription-id:
+    description: Subscription ID (azure)
+    required: false
+  gcp-workload-identity-provider:
+    description: Full resource name of the workload identity provider (gcp)
+    required: false
+  gcp-service-account:
+    description: Service account to impersonate (gcp)
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/cloud-login
+      with:
+        cloud: ${{ inputs.cloud }}
+        aws-role-arn: ${{ inputs.aws-role-arn }}
+        aws-region: ${{ inputs.aws-region }}
+        azure-client-id: ${{ inputs.azure-client-id }}
+        azure-tenant-id: ${{ inputs.azure-tenant-id }}
+        azure-subscription-id: ${{ inputs.azure-subscription-id }}
+        gcp-workload-identity-provider: ${{ inputs.gcp-workload-identity-provider }}
+        gcp-service-account: ${{ inputs.gcp-service-account }}
+
+    - name: Allow this runner to reach the cluster API
+      if: inputs.allow-runner-ip == 'true'
+      shell: bash
+      env:
+        CLOUD: ${{ inputs.cloud }}
+      run: |
+        ip=$(curl -fsS --max-time 20 https://checkip.amazonaws.com | tr -d '[:space:]')
+        case "$ip" in
+          '' | *[!0-9.]*) echo "::error::Could not determine this runner's public IP"; exit 1 ;;
+        esac
+        "$GITHUB_WORKSPACE/scripts/cluster-ops.sh" allow-ip "$CLOUD" "${ip}/32"
+
+    - name: Write a kubeconfig named after the cluster
+      shell: bash
+      env:
+        CLOUD: ${{ inputs.cloud }}
+      run: |
+        kubeconfig=$("$GITHUB_WORKSPACE/scripts/cluster-ops.sh" kubeconfig "$CLOUD")
+        echo "KUBECONFIG=${kubeconfig}" >> "$GITHUB_ENV"
+        echo "KUBE_CONTEXT=$(kubectl --kubeconfig "$kubeconfig" config current-context)" >> "$GITHUB_ENV"

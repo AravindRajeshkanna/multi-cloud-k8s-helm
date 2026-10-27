@@ -32,6 +32,7 @@ lint: ## shellcheck the scripts and actionlint the workflows
 	shellcheck scripts/*.sh
 	actionlint
 
-test: ## Offline tests: scripts/cluster-ops.sh (cloud CLIs stubbed) and the Helm charts
+test: ## Offline tests: the cluster and deploy scripts (CLIs stubbed) and the Helm charts
 	@./scripts/test-cluster-ops.sh
+	@./scripts/test-deploy.sh
 	@./scripts/test-charts.sh

@@ -30,7 +30,7 @@ Already in place from Phase 1:
 - Dependabot for GitHub Actions and Terraform.
 - [helm-check.yml](../../.github/workflows/helm-check.yml): read-only check that the pinned Helm 4 reaches each live cluster and the platform add-ons are `deployed` ([helm.md](../helm.md)). Phase 4's deploy job can reuse its login / kubeconfig steps.
 
-When Phase 4 workloads exist, add a deploy job that runs after `up` so a brought-up cluster comes back with its applications.
+Phase 4 added [deploy.yml](../../.github/workflows/deploy.yml) and a `deploy` input on `up`, so a brought-up cluster can come back with its applications ([deploying.md](../deploying.md)). It deploys the repository's charts from a checkout of `main`; promotion across environments from versioned artifacts is the part left for this phase.
 
 Also from Phase 3: the `charts` and `charts-kind` jobs in [ci.yml](../../.github/workflows/ci.yml) lint and render every chart (`helm lint --strict`, `helm template`) and install them on a throwaway kind cluster.
 

@@ -7,7 +7,7 @@ Two charts live in [charts/](../charts/):
 | [webapp](../charts/webapp) | A portable, stateless web service. It runs [podinfo](https://github.com/stefanprodan/podinfo) by default; image, command, port and probe paths are values, so any HTTP service can replace it. |
 | [cluster-issuers](../charts/cluster-issuers) | cert-manager `ClusterIssuer`s, installed once per cluster: `selfsigned` (works anywhere), `letsencrypt-staging` and `letsencrypt-prod` (need a domain). |
 
-Why the charts are shaped this way: [ADR 0005](decisions/0005-chart-portability.md).
+Why the charts are shaped this way: [ADR 0005](decisions/0005-chart-portability.md). How they get onto the clusters, in CI: [deploying.md](deploying.md).
 
 ## One chart, three clouds
 
@@ -70,6 +70,10 @@ helm ... upgrade --install issuers charts/cluster-issuers -n cert-manager \
 `values-prod.yaml` asks for `letsencrypt-prod`. To try TLS without a domain, deploy with `--set ingress.tls.clusterIssuer=selfsigned`. The Ingress carries the `cert-manager.io/cluster-issuer` annotation and a `tls` section, and cert-manager creates the Certificate and the secret.
 
 Plain HTTP on an Ingress that has a `tls` section, and HTTP-to-HTTPS redirects, are controller behaviour and are not set up here; add them with `ingress.annotations` once you decide how you want them.
+
+## Secrets
+
+No secret goes in a values file. The chart reads Secrets by reference: `envFrom` (`secretRef`) and `extraEnv` (`valueFrom.secretKeyRef`) name a Kubernetes Secret that exists in the namespace. Where that Secret comes from is in [deploying.md](deploying.md#secrets).
 
 ## What the chart sets for you
 
