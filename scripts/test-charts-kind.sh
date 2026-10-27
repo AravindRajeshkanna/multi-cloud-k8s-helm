@@ -45,7 +45,9 @@ tf_default() {
 }
 cert_manager_version=$(tf_default cert_manager_chart_version)
 traefik_version=$(tf_default traefik_chart_version)
-[ -n "$cert_manager_version" ] && [ -n "$traefik_version" ] || die "cannot read the chart versions from infra/modules/core-addons/variables.tf"
+if [ -z "$cert_manager_version" ] || [ -z "$traefik_version" ]; then
+  die "cannot read the chart versions from infra/modules/core-addons/variables.tf"
+fi
 
 namespaces="cert-manager traefik-test web-eks web-aks web-gke web-prod"
 cleanup() {
