@@ -83,6 +83,8 @@ kubectl config use-context mc-aks                          # switch clusters
 - Both IRSA (OIDC provider) and Pod Identity are enabled. The EBS CSI driver and Cluster Autoscaler use Pod Identity.
 - The Cluster Autoscaler's chart version and image tag (`cluster_autoscaler_chart_version`, `cluster_autoscaler_image_tag`) must match `kubernetes_version`'s minor; bump them together. The image tag is set explicitly because the chart's default lags upstream's patch releases ([supply-chain.md](../docs/supply-chain.md)).
 - Traefik's Service is annotated for an in-tree NLB, so the AWS Load Balancer Controller isn't required yet.
+- NetworkPolicy is enforced by the VPC CNI (`enableNetworkPolicy` on the add-on), and nodes allow only IMDSv2 with a hop limit of 1, so pods cannot read the node's credentials ([docs/hardening.md](../docs/hardening.md)).
+- `enable_monitoring = true` (all three roots) installs Prometheus and Grafana ([docs/observability.md](../docs/observability.md)); off by default.
 
 ### AKS
 

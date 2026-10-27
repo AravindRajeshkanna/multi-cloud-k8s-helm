@@ -38,7 +38,7 @@ Code lives in [infra/](../../infra/); the step-by-step runbook is [infra/README.
 | Workload identity | IRSA + Pod Identity enabled | OIDC issuer + Workload Identity enabled | Workload Identity pool enabled |
 | Autoscaling | Cluster Autoscaler (Pod Identity role) | Node pool autoscaler | Node pool autoscaler |
 | Storage | EBS CSI driver add-on | Built-in CSI drivers | Built-in CSI drivers |
-| Network policy | VPC CNI (enforcement is a Phase 6 item) | Cilium | Dataplane V2 (Cilium) |
+| Network policy | VPC CNI, enforcement switched on in Phase 6 | Cilium | Dataplane V2 (Cilium) |
 
 ### Taking it down and up
 

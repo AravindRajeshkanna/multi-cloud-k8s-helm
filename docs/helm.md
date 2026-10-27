@@ -64,6 +64,7 @@ make helm-repos
 | `traefik` (`https://traefik.github.io/charts`) | Traefik |
 | `metrics-server` (`https://kubernetes-sigs.github.io/metrics-server`) | metrics-server (EKS) |
 | `autoscaler` (`https://kubernetes.github.io/autoscaler`) | Cluster Autoscaler (EKS) |
+| `prometheus-community` (`https://prometheus-community.github.io/helm-charts`) | The optional monitoring stack ([observability.md](observability.md)) |
 
 These are the sources Terraform pins versions from, so `helm show values jetstack/cert-manager --version <pin>` shows what is deployed. OCI registries (`oci://…`) need no `repo add`; use `helm registry login <hostname>` for private ones.
 

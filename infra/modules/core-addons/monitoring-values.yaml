@@ -59,12 +59,15 @@ grafana:
   # assumed). Read it with:
   #   kubectl -n monitoring get secret monitoring-grafana -o jsonpath='{.data.admin-password}' | base64 -d
   adminPassword: ""
+  # Grafana imports the chart's ~28 default dashboards at startup, and that briefly
+  # needs well over 300Mi: at that limit it was OOM-killed in CI, on some runs and not
+  # others. Leave headroom.
   resources:
     requests:
       cpu: 50m
-      memory: 150Mi
+      memory: 256Mi
     limits:
-      memory: 300Mi
+      memory: 768Mi
 
 prometheusOperator:
   resources:

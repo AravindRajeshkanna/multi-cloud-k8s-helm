@@ -6,7 +6,7 @@ Everything that runs in GitHub Actions, when, and what it needs. Decisions behin
 
 | Workflow | Runs | Does | Needs cloud credentials |
 |----------|------|------|:--:|
-| [CI](../.github/workflows/ci.yml) | every pull request, and pushes to `main` | Terraform format and validate (3 roots), shellcheck, the offline test suites, chart lint/render/assertions, and chart + policy + deploy tests on a throwaway kind cluster | no |
+| [CI](../.github/workflows/ci.yml) | every pull request, and pushes to `main` | Terraform format and validate (3 roots), shellcheck, the offline test suites, chart lint/render/assertions, and on throwaway kind clusters: the charts, `deploy.sh`, admission policies, quota and network rules (on kind's default network plugin and on Cilium), and the optional monitoring stack | no |
 | [Supply chain](../.github/workflows/supply-chain.yml) | weekly; on demand; pull requests touching charts or pinned versions | Scans every image the clusters run, records SBOMs ([supply-chain.md](supply-chain.md)) | no |
 | [Clusters](../.github/workflows/terraform.yml) | on demand, `main` for `up`/`down` | `plan`, `up` (optionally `deploy`), `down` ([cost-control.md](cost-control.md)) | yes |
 | [Deploy workloads](../.github/workflows/deploy.yml) | on demand, `main` only | Policies, issuers, the app, then validation ([deploying.md](deploying.md)) | yes |

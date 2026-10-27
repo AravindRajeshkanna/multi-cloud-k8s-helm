@@ -35,7 +35,7 @@ variable "traefik_chart_version" {
 }
 
 variable "enable_monitoring" {
-  description = "Install Prometheus and Grafana (kube-prometheus-stack, values in monitoring-values.yaml). Off by default: it adds about 1.5 GiB of memory demand to a small cluster."
+  description = "Install Prometheus and Grafana (kube-prometheus-stack, values in monitoring-values.yaml). Off by default: it requests about 1.1 GiB of memory (up to 2.7 GiB at its limits) on a small cluster."
   type        = bool
   default     = false
 }

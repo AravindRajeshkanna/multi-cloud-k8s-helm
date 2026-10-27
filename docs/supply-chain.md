@@ -4,7 +4,7 @@ The [Supply chain workflow](../.github/workflows/supply-chain.yml) scans every c
 
 ## What it covers
 
-[scripts/list-images.sh](../scripts/list-images.sh) renders the charts and prints every image they run: the `webapp` workload, and the platform add-ons **at the versions Terraform pins** (Traefik, cert-manager including its challenge solver, metrics-server, the Cluster Autoscaler). Today that is 9 images. When a chart version or an image tag changes, the list changes with it.
+[scripts/list-images.sh](../scripts/list-images.sh) renders the charts and prints every image they run: the `webapp` workload, and the platform add-ons **at the versions Terraform pins** (Traefik, cert-manager including its challenge solver, metrics-server, the Cluster Autoscaler, and the optional monitoring stack, whether or not it is enabled). Today that is 17 images. When a chart version or an image tag changes, the list changes with it.
 
 It runs weekly (Mondays 04:00 UTC, because new vulnerabilities are published against images that did not change), on demand (*Actions → Supply chain → Run workflow*), and on pull requests that touch the charts or the pinned versions.
 

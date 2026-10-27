@@ -79,6 +79,10 @@ Notes:
 - GitHub disables scheduled workflows in a **public** repository with no activity for 60 days; re-enable it under the Actions tab.
 - If a teardown is still running when the guard fires, the guard's teardown queues behind it (one run per cloud at a time).
 
+## The monitoring stack and cost
+
+Prometheus and Grafana ([observability.md](observability.md)) request about 1.1 GiB of memory (up to 2.7 GiB at the limits), which can make a cluster add a node, but they create no load balancer, disk or other billable object of their own: their Services are `ClusterIP` and nothing is persisted. `down` needs no extra step for them.
+
 ## Know what this does not guarantee
 
 This repo removes what it created and checks that it is gone. It cannot see:
