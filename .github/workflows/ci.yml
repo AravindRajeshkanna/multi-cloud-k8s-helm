@@ -125,3 +125,8 @@ jobs:
         run: |
           kubectl --context kind-monitoring get pods -A -o wide || true
           kubectl --context kind-monitoring get events -A --sort-by=.lastTimestamp | tail -n 60 || true
+          # The logs of any container that has restarted, including the run before the last crash.
+          for pod in $(kubectl --context kind-monitoring get pods -A --no-headers | awk '$5 != "0" && $5 != "" {print $1"/"$2}'); do
+            echo "===== $pod (previous run)"
+            kubectl --context kind-monitoring -n "${pod%%/*}" logs "${pod##*/}" --all-containers --previous --tail=40 2>&1 || true
+          done

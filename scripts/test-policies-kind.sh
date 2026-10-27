@@ -34,6 +34,7 @@ k get namespace >/dev/null || die "cannot reach the cluster behind context '$ctx
 [ -z "$(k get namespace ingress --ignore-not-found -o name)" ] || die "namespace 'ingress' exists: this looks like a platform cluster, refusing"
 
 on=policy-on
+lim=policy-limits
 off=policy-off
 failures=0
 pass() { echo "ok    $1"; }
@@ -45,7 +46,7 @@ fail() {
 
 cleanup() {
   k delete -f "$root/policies/admission/" --ignore-not-found >/dev/null 2>&1 || true
-  k delete namespace "$on" "$off" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  k delete namespace "$on" "$lim" "$off" --ignore-not-found --wait=false >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -99,9 +100,16 @@ denied() { # <description> <text the refusal must contain> <namespace> <json>
 
 log "installing the policies"
 k apply -f "$root/policies/admission/" >/dev/null
-for ns in "$on" "$off"; do k create namespace "$ns" >/dev/null; done
-k label namespace "$on" policy.multi-cloud-k8s-helm.io/enforce=true pod-security.kubernetes.io/enforce=restricted >/dev/null
-k apply -n "$on" -f "$root/policies/namespace/" >/dev/null
+for ns in "$on" "$lim" "$off"; do k create namespace "$ns" >/dev/null; done
+for ns in "$on" "$lim"; do
+  k label namespace "$ns" policy.multi-cloud-k8s-helm.io/enforce=true pod-security.kubernetes.io/enforce=restricted >/dev/null
+done
+# The limit range refuses a pod with no memory request or limit BEFORE the CEL rules
+# get to see it (it is an earlier admission step), which would hide the rules' own
+# messages. So the rules are tested in a namespace with the quota and network
+# policies but no limit range, and the limit range in one with everything.
+k apply -n "$on" -f "$root/policies/namespace/resource-quota.yaml" -f "$root/policies/namespace/network.yaml" >/dev/null
+k apply -n "$lim" -f "$root/policies/namespace/" >/dev/null
 
 # A policy takes a moment to start enforcing: wait until a violation is refused.
 log "waiting for the policies to be enforced"
@@ -140,17 +148,19 @@ admitted "an image from Artifact Registry is admitted" "$on" "$(pod us-central1-
 privileged=$(pod "$good_image" | jq '.spec.containers[0].securityContext = {privileged: true}')
 denied "a privileged pod is refused by the Pod Security Standard" "PodSecurity" "$on" "$privileged"
 
-echo "-- namespace limits (policies/namespace)"
+echo "-- namespace quota and limit range (policies/namespace)"
 sized() { # <cpu request> <memory request> <memory limit>: the compliant pod with that sizing
   pod "$good_image" | jq --arg cr "$1" --arg mr "$2" --arg ml "$3" '.spec.containers[0].resources = {requests: {cpu: $cr, memory: $mr}, limits: {memory: $ml}}'
 }
 admitted "a modestly sized pod is admitted" "$on" "$(sized 100m 128Mi 256Mi)"
+admitted "and in the namespace that also has the limit range" "$lim" "$(sized 100m 128Mi 256Mi)"
 # 16Mi requested and 256Mi allowed is a ratio of 16; the limit range allows 4.
-denied "a limit far above the request is refused by the limit range" "limit to request ratio" "$on" "$(sized 100m 16Mi 256Mi)"
+denied "a limit far above the request is refused by the limit range" "limit to request ratio" "$lim" "$(sized 100m 16Mi 256Mi)"
+admitted "the same pod is admitted where there is no limit range" "$on" "$(sized 100m 16Mi 256Mi)"
 # The limit range must not fill in what a pod left out: that would defeat the
-# policy requiring pods to declare their resources. (Tested above as "no resources
-# is refused"; this names the reason it matters.)
-denied "a pod that declares nothing is still refused, not given defaults" "workloads-require-resources" "$on" "$(pod "$good_image" | jq 'del(.spec.containers[0].resources)')"
+# policy requiring pods to declare their resources. With min/max in the limit range
+# this pod was ADMITTED, with a 2Gi limit it never asked for. Any refusal will do here.
+denied "a pod that declares nothing is refused, not given defaults" "Forbidden" "$lim" "$(pod "$good_image" | jq 'del(.spec.containers[0].resources)')"
 # Three containers of 1500Mi are each within the limit range, but 4.5Gi in total
 # is over the namespace's 4Gi of requested memory.
 over_quota=$(pod "$good_image" | jq --arg image "$good_image" '.spec.containers = [range(3) as $i | {
