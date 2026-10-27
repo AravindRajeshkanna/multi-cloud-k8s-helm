@@ -1,0 +1,13 @@
+multi-cloud-k8s-helm
+Copyright 2026 Aravind Rajesh Kanna
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This repository does not bundle third-party source code. It references, and
+at deploy time downloads, the following upstream software, each of which is
+governed by its own license (see docs/licenses.md):
+
+  - Terraform providers: hashicorp/aws, hashicorp/azurerm, hashicorp/google,
+    hashicorp/helm
+  - Terraform modules: terraform-aws-modules/vpc, terraform-aws-modules/eks
+  - Helm charts: Traefik, metrics-server, cert-manager, cluster-autoscaler

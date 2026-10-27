@@ -1,0 +1,32 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+tfplan
+*.tfplan
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Local variable / backend files. Commit non-secret tuning as *.auto.tfvars instead.
+terraform.tfvars
+terraform.tfvars.json
+backend.hcl
+
+# Kubeconfigs and credentials
+kubeconfig*
+*.kubeconfig
+*.pem
+*.key
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

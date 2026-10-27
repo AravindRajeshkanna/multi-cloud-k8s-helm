@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/cloud-login
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: terraform
+    directories:
+      - /infra/aws-eks
+      - /infra/azure-aks
+      - /infra/gcp-gke
+      - /infra/modules/core-addons
+    schedule:
+      interval: weekly

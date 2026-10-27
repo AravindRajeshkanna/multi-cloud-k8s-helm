@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars for local runs (git-ignored), or commit non-secret
+# overrides as prod.auto.tfvars so CI picks them up too.
+# project_id is not set here: export TF_VAR_project_id.
+
+region       = "us-central1"
+cluster_name = "mc-gke"
+
+# Where Terraform / kubectl / helm run from. Required while the public endpoint is on.
+api_authorized_cidrs = ["203.0.113.10/32"]
+
+# deletion_protection = false   # needed before `terraform destroy`

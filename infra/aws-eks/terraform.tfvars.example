@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars for local runs (git-ignored), or commit non-secret
+# overrides as prod.auto.tfvars so CI picks them up too.
+
+region       = "us-east-1"
+cluster_name = "mc-eks"
+
+# Where Terraform / kubectl / helm run from. Required while the public endpoint is on.
+api_authorized_cidrs = ["203.0.113.10/32"]
+
+# single_nat_gateway = false   # one NAT per AZ for production resilience

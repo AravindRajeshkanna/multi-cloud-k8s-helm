@@ -1,0 +1,5 @@
+bucket       = "my-org-tfstate-aws"
+key          = "multi-cloud-k8s-helm/aws-eks/terraform.tfstate"
+region       = "us-east-1"
+encrypt      = true
+use_lockfile = true
