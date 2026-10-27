@@ -60,7 +60,7 @@ Terraform and the drain step talk to each cluster's API server. On the default G
 2. adds that `/32` to the cluster's allow-list (`up` creates the cluster with it; `down` and a repeat `up` add it first with `cluster-ops.sh allow-ip`, keeping existing entries),
 3. runs Terraform with the allow-list set to `API_AUTHORIZED_CIDRS` plus that IP.
 
-So no static IP is needed and `API_AUTHORIZED_CIDRS` is optional (use it for *your* workstation). The trade-off: the last run's runner IP stays on the allow-list until the next `up`/`down`. That IP belongs to GitHub's shared pool, and the API still demands valid credentials, but if that is not acceptable set `TF_RUNNER` to a self-hosted or static-IP runner. With `TF_RUNNER` set, no IP is added; put that runner's egress in `API_AUTHORIZED_CIDRS`, or for a private cluster use a runner inside the network.
+The [Helm check](helm.md#5-checking-helm-against-the-live-clusters) does the same first step. So no static IP is needed and `API_AUTHORIZED_CIDRS` is optional (use it for *your* workstation). The trade-off: the last run's runner IP stays on the allow-list until the next `up`/`down`. That IP belongs to GitHub's shared pool, and the API still demands valid credentials, but if that is not acceptable set `TF_RUNNER` to a self-hosted or static-IP runner. With `TF_RUNNER` set, no IP is added; put that runner's egress in `API_AUTHORIZED_CIDRS`, or for a private cluster use a runner inside the network.
 
 `plan` never changes a running cluster, so against an existing cluster it can only refresh state if the runner's IP is already allowed.
 

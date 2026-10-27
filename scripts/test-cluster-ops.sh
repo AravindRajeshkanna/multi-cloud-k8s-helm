@@ -66,6 +66,14 @@ case "$*" in
   *"get svc -o jsonpath"*) echo "web-lb" ;;
 esac
 EOF
+cat >"$work/bin/helm" <<'EOF'
+#!/usr/bin/env bash
+echo "helm $*" >>"$STUB_LOG"
+[ -z "${STUB_HELM_FAIL:-}" ] || { echo "Kubernetes cluster unreachable" >&2; exit 1; }
+case "$*" in
+  *"list --all-namespaces --output json") printf '%s' "${STUB_HELM_JSON:-[]}" ;;
+esac
+EOF
 chmod +x "$work/bin/"*
 
 failures=0
@@ -147,6 +155,39 @@ expect "azure drain" 0 env STUB_RG_EXISTS=true STUB_AKS="mc-aks" STUB_PVC_NS="da
 called "  uses admin credentials" "--admin"
 expect "gcp drain" 0 env GCP_PROJECT_ID=p STUB_GKE="mc-gke" STUB_SVC_NS="web" "$script" drain gcp
 called "  builds a kubeconfig from a token" "set-credentials mc-gke --token"
+
+echo "-- kubeconfig"
+expect "aws: prints the path of a file of its own" 0 env STUB_EKS="mc-eks" "$script" kubeconfig aws
+contains "  under the temp dir, not ~/.kube" "$work/kubeconfig-helm-aws"
+called "  context named after the cluster" "update-kubeconfig --name mc-eks --region us-east-1 --alias mc-eks"
+expect "aws: absent cluster is an error" 2 env STUB_EKS="" "$script" kubeconfig aws
+contains "  says to bring it up" "bring it up first"
+expect "aws: auth failure is an error" 2 env STUB_FAIL=1 "$script" kubeconfig aws
+expect "azure: present cluster" 0 env STUB_RG_EXISTS=true STUB_AKS="mc-aks" "$script" kubeconfig azure
+called "  admin credentials, context named after the cluster" "--admin --context mc-aks"
+expect "azure: absent cluster is an error" 2 env STUB_RG_EXISTS=false "$script" kubeconfig azure
+expect "gcp: present cluster" 0 env GCP_PROJECT_ID=p STUB_GKE="mc-gke" "$script" kubeconfig gcp
+called "  context named after the cluster" "set-context mc-gke"
+expect "gcp: absent cluster is an error" 2 env GCP_PROJECT_ID=p STUB_GKE="" "$script" kubeconfig gcp
+expect "custom cluster name is honoured" 0 env CLUSTER_NAME=other STUB_EKS="other" "$script" kubeconfig aws
+called "  alias follows the name" "--alias other"
+
+echo "-- addons"
+rel() { printf '{"name":"%s","namespace":"%s","status":"%s","chart":"%s-1.0.0"}' "$1" "$2" "${3:-deployed}" "$1"; }
+common="$(rel traefik ingress),$(rel cert-manager cert-manager)"
+eks_extra="$(rel metrics-server kube-system),$(rel cluster-autoscaler kube-system)"
+expect "aws: all four releases deployed" 0 env STUB_EKS="mc-eks" STUB_HELM_JSON="[$common,$eks_extra]" "$script" addons aws
+contains "  table lists the chart" "| traefik | ingress | deployed | traefik-1.0.0 |"
+called "  uses the cluster's context" "helm --kube-context mc-eks list"
+expect "aws: a missing release fails" 1 env STUB_EKS="mc-eks" STUB_HELM_JSON="[$common,$(rel metrics-server kube-system)]" "$script" addons aws
+contains "  names the missing one" "| cluster-autoscaler | kube-system | missing | - |"
+expect "a release that is not deployed fails" 1 env STUB_EKS="mc-eks" STUB_HELM_JSON="[$(rel traefik ingress failed),$(rel cert-manager cert-manager),$eks_extra]" "$script" addons aws
+contains "  shows its status" "| traefik | ingress | failed |"
+expect "same name in another namespace does not count" 1 env STUB_EKS="mc-eks" STUB_HELM_JSON="[$(rel traefik default),$(rel cert-manager cert-manager),$eks_extra]" "$script" addons aws
+expect "azure: only the shared add-ons are expected" 0 env STUB_RG_EXISTS=true STUB_AKS="mc-aks" STUB_HELM_JSON="[$common]" "$script" addons azure
+expect "gcp: only the shared add-ons are expected" 0 env GCP_PROJECT_ID=p STUB_GKE="mc-gke" STUB_HELM_JSON="[$common]" "$script" addons gcp
+expect "unreachable API is an error, not a pass" 2 env STUB_EKS="mc-eks" STUB_HELM_FAIL=1 "$script" addons aws
+expect "absent cluster is an error" 2 env STUB_EKS="" "$script" addons aws
 
 echo "-- allow-ip"
 ip="203.0.113.9/32"

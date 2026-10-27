@@ -1,6 +1,6 @@
 # GitHub secrets & cloud credentials
 
-You configure these by hand; nothing in this repo creates them. The goal is **no long-lived cloud keys in GitHub**: the workflow in [terraform.yml](../.github/workflows/terraform.yml) trades a GitHub-issued OIDC token for short-lived cloud credentials. What you store in GitHub are identifiers (role ARN, client ID, provider name), not passwords.
+You configure these by hand; nothing in this repo creates them. The goal is **no long-lived cloud keys in GitHub**: the workflows ([terraform.yml](../.github/workflows/terraform.yml), [helm-check.yml](../.github/workflows/helm-check.yml), [cost-guard.yml](../.github/workflows/cost-guard.yml)) trade a GitHub-issued OIDC token for short-lived cloud credentials. What you store in GitHub are identifiers (role ARN, client ID, provider name), not passwords.
 
 Replace the placeholders:
 

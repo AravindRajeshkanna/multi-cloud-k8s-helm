@@ -15,6 +15,8 @@ Nothing from the projects below is copied into this repository. They are referen
 | [Terraform CLI](https://github.com/hashicorp/terraform) 1.6+ | Running the configurations | BUSL-1.1 (source-available) |
 | Terraform providers `aws`, `azurerm`, `google`, `helm` | Talking to clouds / Helm | MPL-2.0 |
 | [terraform-aws-modules/eks](https://github.com/terraform-aws-modules/terraform-aws-eks), [vpc](https://github.com/terraform-aws-modules/terraform-aws-vpc) | EKS and VPC resources | Apache-2.0 |
+| [Helm CLI](https://github.com/helm/helm) 4.x | Deploying workloads (Phase 4), checking the clusters | Apache-2.0 |
+| [azure/setup-helm](https://github.com/Azure/setup-helm) (GitHub Action) | Installing the pinned Helm in CI | MIT |
 | [Traefik Helm chart](https://github.com/traefik/traefik-helm-chart) | Ingress controller | Apache-2.0 |
 | [metrics-server](https://github.com/kubernetes-sigs/metrics-server) | Resource metrics | Apache-2.0 |
 | [cert-manager](https://github.com/cert-manager/cert-manager) | Certificates | Apache-2.0 |

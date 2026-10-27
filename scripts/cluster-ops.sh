@@ -8,6 +8,18 @@
 #       new IP every run. Does nothing if the cluster is absent, the CIDR is
 #       already listed, or the cluster has no public endpoint.
 #
+#   cluster-ops.sh kubeconfig <aws|azure|gcp>
+#       Write credentials for the cluster to a kubeconfig file of its own (never
+#       ~/.kube/config) and print the file's path. The context is named after the
+#       cluster (mc-eks / mc-aks / mc-gke), so Helm can be pointed at it with
+#       --kube-context. Fails if the cluster does not exist.
+#
+#   cluster-ops.sh addons <aws|azure|gcp>
+#       Use Helm to list the platform releases Terraform installed (Traefik,
+#       cert-manager, plus metrics-server and Cluster Autoscaler on EKS) and
+#       print a Markdown table. Exit 0: all deployed. Exit 1: one is missing or
+#       not "deployed". Exit 2: could not check. Needs helm and jq.
+#
 #   cluster-ops.sh drain <aws|azure|gcp>
 #       Run BEFORE `terraform destroy`. Removes what Kubernetes controllers
 #       created in the cloud on their own (load balancers, disks). Terraform does
@@ -24,7 +36,8 @@
 #   CLOUD_REGION    AWS or GCP region (default us-east-1 / us-central1)
 #   GCP_PROJECT_ID  required for gcp
 #
-# The cloud CLIs must already be authenticated; drain also needs kubectl.
+# The cloud CLIs must already be authenticated. drain needs kubectl, kubeconfig
+# needs kubectl for gcp, addons needs helm and jq.
 set -euo pipefail
 umask 077
 
@@ -41,7 +54,8 @@ die() {
 }
 
 usage() {
-  sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//' >&2
+  # the leading comment block, minus the shebang and the comment markers
+  awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0" >&2
   exit 2
 }
 
@@ -170,8 +184,10 @@ allow_ip() {
 
 # --- drain ------------------------------------------------------------------
 
+# use_cluster <label>: point KUBECONFIG at a fresh file holding this cluster's
+# credentials, under a context named after the cluster.
 use_cluster() {
-  export KUBECONFIG="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/kubeconfig-teardown-$cloud"
+  export KUBECONFIG="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/kubeconfig-$1-$cloud"
   rm -f "$KUBECONFIG"
   case $cloud in
     aws)
@@ -199,6 +215,48 @@ use_cluster() {
   esac
 }
 
+kubeconfig() {
+  cluster_exists || die "cluster $name not found on $cloud (bring it up first)"
+  use_cluster helm
+  printf '%s\n' "$KUBECONFIG"
+}
+
+# --- addons -----------------------------------------------------------------
+
+# Releases the Terraform roots install, as release/namespace. Keep in step with
+# infra/modules/core-addons and infra/aws-eks/addons.tf.
+expected_addons() {
+  echo "traefik/ingress cert-manager/cert-manager"
+  [ "$cloud" != aws ] || echo "metrics-server/kube-system cluster-autoscaler/kube-system"
+}
+
+addons() {
+  command -v jq >/dev/null 2>&1 || die "jq is required for addons"
+  cluster_exists || die "cluster $name not found on $cloud (bring it up first)"
+  use_cluster helm
+
+  local releases item rel ns row bad=0
+  releases=$(helm --kube-context "$name" list --all-namespaces --output json) ||
+    die "helm cannot list releases (is the API server reachable from this runner?)"
+
+  echo "| release | namespace | status | chart |"
+  echo "|---|---|---|---|"
+  for item in $(expected_addons); do
+    rel=${item%%/*}
+    ns=${item#*/}
+    row=$(printf '%s' "$releases" | jq -r --arg r "$rel" --arg n "$ns" \
+      '.[] | select(.name == $r and .namespace == $n) | "\(.status) | \(.chart)"') || die "cannot read helm output"
+    if [ -z "$row" ]; then
+      row="missing | -"
+      bad=1
+    elif [ "${row%% *}" != deployed ]; then
+      bad=1
+    fi
+    echo "| $rel | $ns | $row |"
+  done
+  [ "$bad" -eq 0 ] || return 1
+}
+
 # scale_down <namespace> <kind>: scale every object of a kind to zero, if any exist.
 scale_down() {
   local objs
@@ -211,7 +269,7 @@ drain() {
     log "cluster $name not found on $cloud; nothing to drain"
     return 0
   fi
-  use_cluster
+  use_cluster teardown
 
   local lb_filter='{range .items[?(@.spec.type=="LoadBalancer")]}{.metadata.namespace}{"\n"}{end}'
   local all_ns='{range .items[*]}{.metadata.namespace}{"\n"}{end}'
@@ -326,6 +384,8 @@ init_cloud
 
 case $command in
   allow-ip) allow_ip ;;
+  kubeconfig) kubeconfig ;;
+  addons) addons ;;
   drain) drain ;;
   audit) audit "$wait_seconds" ;;
   *) usage ;;
