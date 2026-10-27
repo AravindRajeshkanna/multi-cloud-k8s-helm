@@ -28,7 +28,7 @@
 
 ## Implementation status
 
-Not started. Phase 1 leaves these hardening items for here:
+Not started. Phase 5 already did two of the items below: the `restricted` Pod Security Standard is enforced in the workload namespaces, and the images are scanned weekly ([policies.md](../policies.md), [supply-chain.md](../supply-chain.md)). Extending Pod Security beyond those namespaces, network policies, quotas and limit ranges are still here. Phase 1 leaves these hardening items for here:
 
 - AKS uses local (cluster-admin certificate) accounts; move to Entra ID RBAC + `kubelogin`.
 - Public API endpoints are CIDR-restricted but still public; move to private endpoints with a runner inside the network.

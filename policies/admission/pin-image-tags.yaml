@@ -1,0 +1,42 @@
+# Images must name a version (a tag other than "latest", or a digest), so a
+# deployment is reproducible and a rollback goes back to the same bits.
+#
+# Applies only in namespaces labelled policy.multi-cloud-k8s-helm.io/enforce=true.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: workloads-pin-image-tags
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  matchConditions:
+    - name: not-an-acme-challenge
+      expression: "!(has(object.metadata.labels) && 'acme.cert-manager.io/http01-solver' in object.metadata.labels)"
+  variables:
+    - name: containers
+      expression: "has(object.spec.initContainers) ? object.spec.containers + object.spec.initContainers : object.spec.containers"
+  validations:
+    # A digest, or "name:tag" in the last path segment (so a registry port such
+    # as host:5000/app does not count as a tag), and the tag is not "latest".
+    - expression: >-
+        variables.containers.all(c,
+          c.image.contains('@sha256:') ||
+          (c.image.matches('[^/@]+:[^/@:]+$') && !c.image.endsWith(':latest')))
+      message: "images must use a version tag (not latest) or a digest"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: workloads-pin-image-tags
+spec:
+  policyName: workloads-pin-image-tags
+  validationActions: ["Deny"]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        policy.multi-cloud-k8s-helm.io/enforce: "true"

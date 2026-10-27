@@ -1,0 +1,45 @@
+# Every container (including init containers) must declare cpu and memory
+# requests and a memory limit, so the scheduler and the autoscalers have
+# something to work with and one pod cannot starve a node.
+#
+# Applies only in namespaces labelled policy.multi-cloud-k8s-helm.io/enforce=true
+# (scripts/deploy.sh labels the workload namespaces). Docs: docs/policies.md
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: workloads-require-resources
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  # cert-manager's Let's Encrypt challenge pods are created by the controller,
+  # not by us, and carry this label.
+  matchConditions:
+    - name: not-an-acme-challenge
+      expression: "!(has(object.metadata.labels) && 'acme.cert-manager.io/http01-solver' in object.metadata.labels)"
+  variables:
+    - name: containers
+      expression: "has(object.spec.initContainers) ? object.spec.containers + object.spec.initContainers : object.spec.containers"
+  validations:
+    - expression: >-
+        variables.containers.all(c,
+          has(c.resources) &&
+          has(c.resources.requests) && 'cpu' in c.resources.requests && 'memory' in c.resources.requests &&
+          has(c.resources.limits) && 'memory' in c.resources.limits)
+      message: "every container needs cpu and memory requests and a memory limit"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: workloads-require-resources
+spec:
+  policyName: workloads-require-resources
+  validationActions: ["Deny"]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        policy.multi-cloud-k8s-helm.io/enforce: "true"

@@ -1,0 +1,37 @@
+# Ingresses must use the platform's controller and serve HTTPS.
+#
+# Applies only in namespaces labelled policy.multi-cloud-k8s-helm.io/enforce=true.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: ingress-requires-class-and-tls
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["ingresses"]
+  # The temporary Ingress cert-manager creates to answer a Let's Encrypt
+  # challenge is plain HTTP by nature.
+  matchConditions:
+    - name: not-an-acme-challenge
+      expression: "!(has(object.metadata.labels) && 'acme.cert-manager.io/http01-solver' in object.metadata.labels)"
+  validations:
+    - expression: "has(object.spec.ingressClassName) && object.spec.ingressClassName == 'traefik'"
+      message: "set spec.ingressClassName to traefik, the platform's ingress controller"
+    - expression: "has(object.spec.tls) && size(object.spec.tls) > 0"
+      message: "serve HTTPS: set spec.tls"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: ingress-requires-class-and-tls
+spec:
+  policyName: ingress-requires-class-and-tls
+  validationActions: ["Deny"]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        policy.multi-cloud-k8s-helm.io/enforce: "true"

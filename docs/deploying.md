@@ -25,9 +25,9 @@ In the order the roadmap gives:
 
 | Step | What happens |
 |------|--------------|
-| 1. Platform | Installs the `issuers` release ([cluster-issuers chart](../charts/cluster-issuers)). Ingress (Traefik), cert-manager, metrics-server and the autoscaler already came from Terraform. Fails with "bring the cluster up first" if cert-manager is missing. |
+| 1. Platform | Applies the admission policies ([policies.md](policies.md)), then installs the `issuers` release ([cluster-issuers chart](../charts/cluster-issuers)). Ingress (Traefik), cert-manager, metrics-server and the autoscaler already came from Terraform. Fails with "bring the cluster up first" if cert-manager is missing, and if the cluster is older than Kubernetes 1.30 (policies). |
 | 2. Shared services | None yet. Databases and caches arrive with the first workload that needs one. |
-| 3. Application | `helm upgrade --install web charts/webapp` into namespace `web-<environment>`, with `values-<cloud>.yaml` then `values-<environment>.yaml` ([charts.md](charts.md)), `--wait` and `--rollback-on-failure`. |
+| 3. Application | Creates the namespace `web-<environment>` and labels it to enforce the policies and the restricted Pod Security Standard, so they apply from the first pod. Then `helm upgrade --install web charts/webapp` into it, with `values-<cloud>.yaml` then `values-<environment>.yaml` ([charts.md](charts.md)), `--wait` and `--rollback-on-failure`. |
 | 4. Validate | `helm test`; the certificate; the autoscaler receiving metrics (prod); and an HTTPS request through the cluster's load balancer. |
 
 ### Environments
@@ -62,6 +62,7 @@ Set as repository variables, or per GitHub Environment ([github-secrets.md](gith
 |------|--------|
 | `APP_DOMAIN` | A domain whose DNS you control. Required for `prod`. |
 | `ACME_EMAIL` | Email for Let's Encrypt. Required for `prod`; when set, the staging and production issuers are installed. |
+| `IMAGE_TAG` | (script) Deploy this image tag instead of the chart's `appVersion`. The Deploy workflow's `image_tag` input sets it; use it to roll out a patched image now or roll back to an older one. |
 | `SKIP_INGRESS_SMOKE` | `1` skips the request through the load balancer. For a custom runner (`TF_RUNNER`) that cannot reach it. |
 
 ## Production and DNS
@@ -106,5 +107,6 @@ helm --kube-context mc-eks -n web-dev uninstall web
 | `timed out ... to answer through` | The load balancer exists but traffic does not arrive. Check security groups or firewall rules; on a runner that cannot reach it, set `SKIP_INGRESS_SMOKE=1`. |
 | `timed out ... Ready` (dev) | cert-manager could not issue. `kubectl -n web-dev describe certificate,certificaterequest`. |
 | `timed out ... receive metrics` | metrics-server is not running or cannot scrape the nodes. |
+| `FailedCreate` events, pods never appear | An admission policy refused the pod: `kubectl -n web-dev describe rs`. The message names the rule ([policies.md](policies.md)). |
 | Pods `Pending`, node selector | The `pool` label in `values-<cloud>.yaml` does not match the nodes ([charts.md](charts.md#troubleshooting)). |
 | `prod needs APP_DOMAIN` / `ACME_EMAIL` | Set the variables, or deploy `dev`. |

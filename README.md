@@ -13,7 +13,8 @@ One set of Helm charts, three managed Kubernetes services. The clusters are prov
 | 2 | Install & configure Helm (Helm 4 pinned, contexts, repos, live-cluster check) | implemented — **check not yet run against real clusters** |
 | 3 | Portable Helm charts (`webapp`, `cluster-issuers`) | implemented — tested by rendering and on a kind cluster, **not yet deployed to real clusters** |
 | 4 | Deploy workloads (`deploy.sh`, Deploy workflow, redeploy after `up`) | implemented — tested offline and on kind, **not yet run on real clusters** |
-| 5–6 | CI/CD & GitOps, operations | planned |
+| 5 | CI/CD, policy and supply chain (GitOps reconsidered) | partly built, partly decided — admission policies and image scanning tested in CI, **not yet on real clusters** |
+| 6 | Observability, security hardening, operations | planned |
 
 Full plan with per-phase status: [docs/roadmap](docs/roadmap/README.md).
 
@@ -28,11 +29,16 @@ docs/
   helm.md           using Helm 4 with the three clusters (contexts, repos, the Helm check)
   charts.md         the charts: values layering, what differs per cloud, TLS, tests
   deploying.md      deploying the workloads: environments, validation, DNS, secrets
+  policies.md       the admission policies the workload namespaces enforce
+  supply-chain.md   image scanning and SBOMs
+  pipeline.md       every workflow, when it runs, and the path from a change to production
   licenses.md       licensing of this repo and its dependencies
 infra/              Phase 1: Terraform for EKS, AKS, GKE (+ runbook in infra/README.md)
 charts/             Phase 3: Helm charts - webapp (one chart, per-cloud values files), cluster-issuers
-scripts/            check-prereqs.sh, cluster-ops.sh (drain / audit / allow-ip / kubeconfig / addons), deploy.sh, and their tests
-.github/workflows/  ci.yml, terraform.yml (plan / up / down), deploy.yml, cost-guard.yml (nightly check), helm-check.yml
+policies/           Phase 5: admission policies (ValidatingAdmissionPolicy) for the workload namespaces
+scripts/            check-prereqs.sh, cluster-ops.sh (drain / audit / allow-ip / kubeconfig / addons), deploy.sh, list-images.sh, scan-summary.sh, and their tests
+.github/workflows/  ci.yml, terraform.yml (plan / up / down), deploy.yml, cost-guard.yml (nightly check), helm-check.yml, supply-chain.yml
+.githooks/          pre-commit hook (make hooks)
 .github/actions/    cloud-login, cluster-access (login + runner access + kubeconfig)
 .tool-versions      the pinned Helm version CI installs
 ```
@@ -41,6 +47,7 @@ scripts/            check-prereqs.sh, cluster-ops.sh (drain / audit / allow-ip /
 
 ```sh
 make prereqs     # check your toolchain
+make hooks       # run CI's fast checks before every commit
 make validate    # terraform validate all three roots, no credentials needed
 make test        # offline tests: the cluster scripts and the Helm charts (all cloud x environment combinations)
 make helm-repos  # add the chart repositories the platform add-ons come from
@@ -64,6 +71,8 @@ gh workflow run terraform.yml -f cloud=all -f action=up -f deploy=dev           
 - Standard clusters (you own the node pools), one cluster per cloud, namespaces for environments.
 - Plain Helm driven from CI; GitOps is reconsidered in Phase 5.
 - Helm 4, pinned in `.tool-versions`; the cluster is always chosen with `--kube-context` ([ADR 0004](docs/decisions/0004-helm-client.md), [docs/helm.md](docs/helm.md)).
+- Workload namespaces enforce native admission policies and the restricted Pod Security Standard; every image the clusters run is scanned weekly ([ADR 0008](docs/decisions/0008-policy-and-supply-chain.md)).
+- Delivery stays CI-driven: GitOps was reconsidered and a reconciling controller would fight the teardown ([ADR 0007](docs/decisions/0007-delivery-strategy.md)).
 - Deployments come from one script run from `main` and are validated against the real load balancer ([ADR 0006](docs/decisions/0006-deployment-model.md), [docs/deploying.md](docs/deploying.md)).
 - One chart, three clouds: differences live in values files, never in templates ([ADR 0005](docs/decisions/0005-chart-portability.md), [docs/charts.md](docs/charts.md)).
 - GitHub → cloud authentication through OIDC; no long-lived cloud keys in GitHub.

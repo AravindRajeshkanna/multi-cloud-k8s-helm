@@ -52,6 +52,8 @@ jobs:
         run: scripts/test-cluster-ops.sh
       - name: Offline tests for deploy.sh (helm, kubectl and curl stubbed)
         run: scripts/test-deploy.sh
+      - name: Offline tests for scan-summary.sh (hand-made vulnerability reports)
+        run: scripts/test-scan-summary.sh
 
   charts:
     name: helm charts (lint, render, assertions)
@@ -80,6 +82,8 @@ jobs:
           kubectl --context kind-charts version
       - name: Install and test the charts
         run: KUBE_CONTEXT=kind-charts scripts/test-charts-kind.sh
+      - name: Test the admission policies
+        run: KUBE_CONTEXT=kind-charts scripts/test-policies-kind.sh
       - name: Show cluster state after a failure
         if: failure()
         run: |

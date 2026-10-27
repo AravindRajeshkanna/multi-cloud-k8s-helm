@@ -1,0 +1,43 @@
+# Images may only come from registries this repo trusts: the upstream publisher
+# of the sample workload, and each cloud's own registry for images of our own.
+# Add a prefix here when a new workload needs another source.
+#
+# Applies only in namespaces labelled policy.multi-cloud-k8s-helm.io/enforce=true.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: workloads-allowed-registries
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  matchConditions:
+    - name: not-an-acme-challenge
+      expression: "!(has(object.metadata.labels) && 'acme.cert-manager.io/http01-solver' in object.metadata.labels)"
+  variables:
+    - name: containers
+      expression: "has(object.spec.initContainers) ? object.spec.containers + object.spec.initContainers : object.spec.containers"
+  validations:
+    - expression: >-
+        variables.containers.all(c,
+          c.image.startsWith('ghcr.io/stefanprodan/') ||
+          c.image.matches('^[a-z0-9-]+\\.dkr\\.ecr\\.[a-z0-9-]+\\.amazonaws\\.com/') ||
+          c.image.matches('^[a-z0-9-]+\\.azurecr\\.io/') ||
+          c.image.matches('^[a-z0-9-]+-docker\\.pkg\\.dev/'))
+      message: "images must come from ghcr.io/stefanprodan/, ECR, ACR or Artifact Registry"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: workloads-allowed-registries
+spec:
+  policyName: workloads-allowed-registries
+  validationActions: ["Deny"]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        policy.multi-cloud-k8s-helm.io/enforce: "true"

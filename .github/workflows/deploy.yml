@@ -22,6 +22,10 @@ on:
         type: choice
         options: [dev, prod]
         default: dev
+      image_tag:
+        description: Image tag to deploy instead of the chart's default (blank = the chart's appVersion). Applies to every cloud in this run.
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -85,6 +89,7 @@ jobs:
         env:
           CLOUD: ${{ matrix.cloud }}
           DEPLOY_ENV: ${{ inputs.environment }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
           APP_DOMAIN: ${{ vars.APP_DOMAIN }}
           ACME_EMAIL: ${{ vars.ACME_EMAIL }}
           # A custom runner may not be able to reach the load balancer.

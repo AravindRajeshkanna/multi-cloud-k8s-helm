@@ -1,12 +1,16 @@
 INFRA_DIRS := infra/aws-eks infra/azure-aks infra/gcp-gke
 
-.PHONY: help prereqs helm-repos fmt fmt-check validate lint test
+.PHONY: help prereqs hooks helm-repos fmt fmt-check validate lint test
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
 
 prereqs: ## Check the local toolchain (Phase 0)
 	@./scripts/check-prereqs.sh
+
+hooks: ## Run CI's fast checks before every commit (git pre-commit hook)
+	git config core.hooksPath .githooks
+	@echo "pre-commit hook enabled: .githooks/pre-commit runs fmt-check, lint and test"
 
 helm-repos: ## Add the Helm chart repositories the platform add-ons come from (Phase 2)
 	helm repo add jetstack https://charts.jetstack.io --force-update
@@ -35,4 +39,5 @@ lint: ## shellcheck the scripts and actionlint the workflows
 test: ## Offline tests: the cluster and deploy scripts (CLIs stubbed) and the Helm charts
 	@./scripts/test-cluster-ops.sh
 	@./scripts/test-deploy.sh
+	@./scripts/test-scan-summary.sh
 	@./scripts/test-charts.sh
