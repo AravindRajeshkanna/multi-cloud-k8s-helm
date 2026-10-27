@@ -47,8 +47,8 @@ The [Clusters workflow](../../.github/workflows/terraform.yml) has `plan`, `up` 
 ### Deliberately not done yet
 
 - **ExternalDNS** — marked optional in the roadmap; needs a DNS zone and per-cloud identity. Add when a real domain is chosen.
-- **ClusterIssuers** — cert-manager is installed, but issuers depend on a domain/email and belong with the first workload (Phase 3/4).
-- **StorageClass defaults** (`gp3`, `managed-csi`, `standard-rwo`) — surfaced through chart values in Phase 3.
+- **ClusterIssuers** — cert-manager is installed, but issuers depend on a domain/email. Now provided as a chart, [charts/cluster-issuers](../../charts/cluster-issuers) (Phase 3); installing it is a Phase 4 step.
+- **StorageClass defaults** (`gp3`, `managed-csi`, `standard-rwo`) — the Phase 3 webapp is stateless, so these move to the first stateful chart. EKS still lacks a `gp3` class ([charts.md](../charts.md#storage)).
 - **Cloud-native ingress** (ALB, Application Gateway, GKE Ingress/Gateway) — see [ADR 0002](../decisions/0002-ingress-controller.md); revisit in Phase 3.
 - **Karpenter** — Cluster Autoscaler is used; Karpenter can replace it in Phase 6.
 - **Entra ID RBAC for AKS** and **fully private API endpoints** — Phase 6 hardening.

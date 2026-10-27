@@ -1,0 +1,19 @@
+# GKE (cluster mc-gke, infra/gcp-gke). Only what really differs on this cloud.
+
+# The node pool's label (infra/gcp-gke/main.tf). Remove this if you change the
+# pool's labels.
+nodeSelector:
+  pool: default
+
+# A visible marker so you can tell which cloud answered.
+env:
+  PODINFO_UI_MESSAGE: "Hello from GKE"
+  PODINFO_UI_COLOR: "#34a853"
+
+# Workload identity (only if the app calls Google APIs): bind a Google service
+# account to this namespace and service account (roles/iam.workloadIdentityUser
+# on member serviceAccount:<project>.svc.id.goog[<namespace>/<ksa>]), then
+#
+# serviceAccount:
+#   annotations:
+#     iam.gke.io/gcp-service-account: <name>@<project>.iam.gserviceaccount.com

@@ -32,4 +32,6 @@ Already in place from Phase 1:
 
 When Phase 4 workloads exist, add a deploy job that runs after `up` so a brought-up cluster comes back with its applications.
 
-Gaps to close in this phase: `helm lint` / `helm template` jobs, policy checks, image scanning, plan-on-pull-request, and an approval gate between `plan` and `apply` (today approval, if any, comes from environment reviewers *before* the plan runs). `tflint` was left out of Phase 1 because it could not be run locally to confirm a clean baseline.
+Also from Phase 3: the `charts` and `charts-kind` jobs in [ci.yml](../../.github/workflows/ci.yml) lint and render every chart (`helm lint --strict`, `helm template`) and install them on a throwaway kind cluster.
+
+Gaps to close in this phase: policy checks (Kyverno / OPA), image scanning, plan-on-pull-request, and an approval gate between `plan` and `apply` (today approval, if any, comes from environment reviewers *before* the plan runs). `tflint` was left out of Phase 1 because it could not be run locally to confirm a clean baseline.

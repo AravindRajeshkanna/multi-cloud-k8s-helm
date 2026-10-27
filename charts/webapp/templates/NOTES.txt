@@ -1,0 +1,17 @@
+{{ include "webapp.fullname" . }} is deployed ({{ include "webapp.image" . }}).
+
+{{- if .Values.ingress.enabled }}
+
+It is routed by the "{{ .Values.ingress.className }}" ingress controller:
+  {{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.host }}{{ .Values.ingress.path }}
+Point that name at the controller's address:
+  kubectl --context <cluster> -n ingress get svc traefik
+{{- else }}
+
+Ingress is off. Reach it from your machine with:
+  kubectl --context <cluster> -n {{ .Release.Namespace }} port-forward svc/{{ include "webapp.fullname" . }} 8080:{{ .Values.service.port }}
+  curl http://localhost:8080/
+{{- end }}
+
+Check it with:
+  helm --kube-context <cluster> -n {{ .Release.Namespace }} test {{ .Release.Name }}

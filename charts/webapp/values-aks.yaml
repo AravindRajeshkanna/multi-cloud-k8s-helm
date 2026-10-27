@@ -1,0 +1,21 @@
+# AKS (cluster mc-aks, infra/azure-aks). Only what really differs on this cloud.
+
+# The user node pool's label (infra/azure-aks/main.tf). The system pool is
+# tainted for critical add-ons, so workloads would land here anyway; the
+# selector keeps that explicit. Remove it if you change the pool's labels.
+nodeSelector:
+  pool: user
+
+# A visible marker so you can tell which cloud answered.
+env:
+  PODINFO_UI_MESSAGE: "Hello from AKS"
+  PODINFO_UI_COLOR: "#0078d4"
+
+# Workload identity (only if the app calls Azure APIs): federate a user-assigned
+# managed identity with this namespace and service account, then
+#
+# serviceAccount:
+#   annotations:
+#     azure.workload.identity/client-id: <managed-identity-client-id>
+# podLabels:
+#   azure.workload.identity/use: "true"

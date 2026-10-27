@@ -1,0 +1,24 @@
+# Needs cert-manager (installed by Phase 1) so its ClusterIssuer CRD exists.
+# Install it once per cluster, before any chart that references an issuer.
+
+# Signs certificates itself. Browsers will not trust them, but TLS can be
+# exercised on any cluster without a domain.
+selfSigned:
+  enabled: true
+  name: selfsigned
+
+# Let's Encrypt, solved over HTTP-01 through the ingress controller. Needs a
+# real domain whose name resolves to the controller's address, and an email
+# address for expiry notices. Use staging first: production rate-limits failures.
+acme:
+  email: ""
+  # The controller that answers the HTTP-01 challenge ingress.
+  ingressClassName: traefik
+  staging:
+    enabled: false
+    name: letsencrypt-staging
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+  production:
+    enabled: false
+    name: letsencrypt-prod
+    server: https://acme-v02.api.letsencrypt.org/directory

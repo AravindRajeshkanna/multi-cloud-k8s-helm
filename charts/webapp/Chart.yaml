@@ -1,0 +1,20 @@
+apiVersion: v2
+name: webapp
+description: A portable, stateless web service. Runs podinfo by default; the same chart deploys unchanged to EKS, AKS and GKE, and per-cloud differences live in values files only.
+type: application
+# The chart's own SemVer; bump it when anything in this directory changes.
+version: 0.1.0
+# The default image tag (podinfo release).
+appVersion: "6.17.0"
+# The "-0" lets managed-Kubernetes versions such as 1.35.2-eks-abc123 match.
+kubeVersion: ">=1.32.0-0"
+home: https://github.com/AravindRajeshkanna/multi-cloud-k8s-helm
+sources:
+  - https://github.com/AravindRajeshkanna/multi-cloud-k8s-helm
+  - https://github.com/stefanprodan/podinfo
+keywords:
+  - web
+  - portable
+  - multi-cloud
+maintainers:
+  - name: Aravind Rajesh Kanna

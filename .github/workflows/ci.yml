@@ -50,3 +50,36 @@ jobs:
       - run: shellcheck scripts/*.sh
       - name: Offline tests for cluster-ops.sh (cloud CLIs stubbed)
         run: scripts/test-cluster-ops.sh
+
+  charts:
+    name: helm charts (lint, render, assertions)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+        with:
+          version-file: .tool-versions
+      - name: Lint and render every cloud x environment, assert on the manifests
+        run: scripts/test-charts.sh
+
+  charts-kind:
+    name: helm charts (install on a throwaway kind cluster)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+        with:
+          version-file: .tool-versions
+      - name: Create a throwaway cluster
+        run: |
+          kind version
+          kind create cluster --name charts --wait 180s
+          kubectl --context kind-charts version
+      - name: Install and test the charts
+        run: KUBE_CONTEXT=kind-charts scripts/test-charts-kind.sh
+      - name: Show cluster state after a failure
+        if: failure()
+        run: |
+          kubectl --context kind-charts get pods -A -o wide || true
+          kubectl --context kind-charts get events -A --sort-by=.lastTimestamp | tail -n 60 || true
