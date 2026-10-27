@@ -42,7 +42,7 @@ A merge never deploys by itself, because the clusters are normally down. A speci
 - Review and merge pull requests.
 - Start `up`, and `deploy`, when the clusters are wanted; `down` when they are not (or let the cost guard).
 - For `prod`: set `APP_DOMAIN` and `ACME_EMAIL` once, and update a DNS record after each `up`.
-- Bump versions when the weekly scan fails on a fixable vulnerability ([supply-chain.md](supply-chain.md#responding-to-a-failure)).
+- Bump versions when the weekly scan fails on a fixable vulnerability ([supply-chain.md](supply-chain.md#responding-to-a-failure)), and renew or retire the time-limited exceptions in `supply-chain-exceptions.txt` before they expire.
 
 ## Local checks
 

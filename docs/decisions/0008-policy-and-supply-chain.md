@@ -23,9 +23,11 @@ Phase 5 asks for "policy checks with Kyverno or OPA", image scanning with an SBO
 
 5. **The pass/fail rule is ours, not the action's:** fail only on vulnerabilities at or above a threshold (critical by default) **that have a fix available**. A rule that failed on unfixable findings would be red all the time and ignored. The rule is a tested script, so the job summary is written even when the run fails.
 
-6. **Scans cover everything the clusters run, derived from the charts at the pinned versions**, weekly and on pull requests that change them. The list is generated, so it cannot drift from what is deployed.
+6. **A finding nobody has fixed yet can be accepted for a limited time**, in a file where each entry names the exact image, the finding, an expiry date and the evidence that nothing newer exists. Entries lapse on a version bump and on the date, and a malformed line is an error, so an exception cannot linger or be typo'd into effect. Without this the weekly job would be red until upstream rebuilds, and a permanently red check is ignored. The first scan needed it at once: the Go toolchain and library fixes for the newest metrics-server and Cluster Autoscaler had not shipped.
 
-7. **A git pre-commit hook** (`make hooks`) runs CI's fast checks locally in about 10 seconds. It is a plain hook with no framework to install; the `pre-commit` framework could wrap the same make targets.
+7. **Scans cover everything the clusters run, derived from the charts at the pinned versions**, weekly and on pull requests that change them. The list is generated, so it cannot drift from what is deployed.
+
+8. **A git pre-commit hook** (`make hooks`) runs CI's fast checks locally in about 10 seconds. It is a plain hook with no framework to install; the `pre-commit` framework could wrap the same make targets.
 
 ## Consequences
 
