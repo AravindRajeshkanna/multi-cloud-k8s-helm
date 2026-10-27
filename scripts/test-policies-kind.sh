@@ -172,9 +172,13 @@ admitted "the same pod is admitted in a namespace with no quota" "$off" "$over_q
 
 echo "-- scope"
 admitted "the same violations are admitted in a namespace that is not labelled" "$off" "$bad"
-solver=$(pod quay.io/jetstack/cert-manager-acmesolver:v1.21.3 | jq 'del(.spec.containers[0].resources) | .metadata.labels = {"acme.cert-manager.io/http01-solver": "true"}')
+# cert-manager gives its challenge pods these resources itself (cert-manager v1.21.3,
+# --acme-http01-solver-resource-*: 10m / 64Mi requests, 100m / 64Mi limits), so they
+# satisfy the quota. What the exemption is for is the image: quay.io/jetstack/ is not
+# on the registry allow-list.
+solver=$(pod quay.io/jetstack/cert-manager-acmesolver:v1.21.3 | jq '.spec.containers[0].resources = {requests: {cpu: "10m", memory: "64Mi"}, limits: {cpu: "100m", memory: "64Mi"}} | .metadata.labels = {"acme.cert-manager.io/http01-solver": "true"}')
 admitted "cert-manager's challenge pods are exempt from the workload policies" "$on" "$solver"
-denied "the exemption is only for the label, not for the image" "workloads-" "$on" "$(printf '%s' "$solver" | jq 'del(.metadata.labels)')"
+denied "the exemption is only for the label, not for the image" "workloads-allowed-registries" "$on" "$(printf '%s' "$solver" | jq 'del(.metadata.labels)')"
 
 # --- ingresses ----------------------------------------------------------------
 
