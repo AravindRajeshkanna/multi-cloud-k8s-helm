@@ -8,9 +8,11 @@
 #
 # NetworkPolicy is only a request: whether anything happens depends on the
 # cluster's network plugin. NETWORK_POLICY says what this cluster is expected to
-# do (enforced: Cilium; ignored: kind's default plugin), and the test asserts that
-# the observed behaviour matches, so a plugin that silently failed to install
-# makes the "enforced" run fail instead of passing without proving anything.
+# do (enforced or ignored), and the test asserts that the observed behaviour
+# matches, so a plugin that silently failed to install makes an "enforced" run fail
+# instead of passing without proving anything. (This is how CI found that kind's
+# default plugin does enforce policy: a run declared "ignored" and traffic was
+# blocked.)
 #
 # Needs helm, kubectl and jq.
 set -euo pipefail
@@ -112,7 +114,8 @@ if h test web -n "$srv" --timeout 3m >/dev/null; then pass "helm test reaches th
 echo "-- egress"
 closed "the application cannot reach out to other namespaces" "$srv" deploy/web-webapp "$target"
 closed "a pod in the application's namespace cannot reach out either" "$srv" client "$target"
-if k -n "$srv" exec deploy/web-webapp -- nslookup kubernetes.default.svc >/dev/null 2>&1; then pass "name resolution still works"; else fail "name resolution still works"; fi
+# A fully qualified name: busybox's nslookup does not apply the search domains.
+if k -n "$srv" exec deploy/web-webapp -- nslookup kubernetes.default.svc.cluster.local >/dev/null 2>&1; then pass "name resolution still works"; else fail "name resolution still works"; fi
 
 echo
 if [ "$failures" -ne 0 ]; then

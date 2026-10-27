@@ -4,9 +4,10 @@
 #
 #   kind-cluster.sh <name> <kindnet|cilium>
 #
-#   kindnet  kind's default network plugin. It does NOT enforce NetworkPolicy: a
-#            policy is accepted and silently ignored.
-#   cilium   enforces NetworkPolicy, as AKS and GKE (Dataplane V2) do.
+#   kindnet  kind's default network plugin. It enforces NetworkPolicy (verified in
+#            CI with kind v0.33.0, contrary to older advice).
+#   cilium   also enforces it, and is the engine AKS and GKE (Dataplane V2) run, so
+#            policy semantics are tested against what two of the three clouds use.
 #
 # The context is kind-<name>. Needs kind, kubectl and helm.
 set -euo pipefail

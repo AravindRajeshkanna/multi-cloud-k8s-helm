@@ -66,10 +66,9 @@ jobs:
       - name: Lint and render every cloud x environment, assert on the manifests
         run: scripts/test-charts.sh
 
-  # The charts, policies and network rules on a real API server. Run once with
-  # kind's default network plugin (which ignores NetworkPolicy) and once with
-  # Cilium (which enforces it, as AKS and GKE do), so the same tests prove the
-  # rules are accepted everywhere and enforced where they can be.
+  # The charts, policies and network rules on a real API server, once with kind's
+  # default network plugin and once with Cilium (the engine AKS and GKE run). Both
+  # enforce NetworkPolicy; the test asserts that rather than assuming it.
   charts-kind:
     name: kind cluster (${{ matrix.cni }})
     runs-on: ubuntu-latest
@@ -79,7 +78,7 @@ jobs:
       matrix:
         include:
           - cni: kindnet
-            network_policy: ignored
+            network_policy: enforced
           - cni: cilium
             network_policy: enforced
     steps:
