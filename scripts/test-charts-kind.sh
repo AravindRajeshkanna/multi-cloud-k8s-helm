@@ -10,9 +10,9 @@
 # manifests, the pods start and pass their probes under the hardened security
 # context, `helm test` passes, an upgrade from dev to prod values works, cert-manager
 # issues the certificate, and Traefik routes a request to the app. The application
-# namespaces enforce the admission policies in policies/ and the restricted Pod
-# Security Standard, as on the real clusters, so every install is also a policy
-# test. It ends by running scripts/deploy.sh, the script the workflows use,
+# namespaces enforce the admission policies in policies/admission, the restricted
+# Pod Security Standard, and the quota and network rules in policies/namespace, as
+# on the real clusters, so every install is also a policy test. It ends by running scripts/deploy.sh, the script the workflows use,
 # against the cluster.
 # CI runs it on a fresh kind cluster. On a machine where the node's address is
 # not reachable from the host (Docker Desktop), set SKIP_INGRESS_SMOKE=1.
@@ -90,13 +90,15 @@ k wait --for=condition=Ready clusterissuer/selfsigned --timeout=120s
 log "admission policies (policies/admission)"
 k apply -f "$root/policies/admission/" >/dev/null
 
-# prepare_ns <namespace>: create it and label it the way scripts/deploy.sh does,
-# so the policies and the restricted Pod Security Standard apply from the first pod.
+# prepare_ns <namespace>: create it and set it up the way scripts/deploy.sh does:
+# labelled so the policies and the restricted Pod Security Standard apply from the
+# first pod, with the quota, limit range and network rules in place.
 prepare_ns() {
   k create namespace "$1" --dry-run=client -o yaml | k apply -f - >/dev/null
   k label namespace "$1" --overwrite \
     policy.multi-cloud-k8s-helm.io/enforce=true \
     pod-security.kubernetes.io/enforce=restricted >/dev/null
+  k apply -n "$1" -f "$root/policies/namespace/" >/dev/null
 }
 
 log "Traefik $traefik_version (the ingress controller Phase 1 installs)"
@@ -112,7 +114,8 @@ for cloud in eks aks gke; do
   log "webapp with values-$cloud.yaml (node label pool=$pool)"
   k label nodes --all "pool=$pool" --overwrite >/dev/null
   prepare_ns "$ns"
-  h upgrade --install web "$app" -n "$ns" --create-namespace -f "$app/values-$cloud.yaml" -f "$app/values-dev.yaml" --wait --timeout 5m
+  h upgrade --install web "$app" -n "$ns" --create-namespace -f "$app/values-$cloud.yaml" -f "$app/values-dev.yaml" \
+    --set networkPolicy.ingressNamespace=traefik-test --wait --timeout 5m
   h test web -n "$ns" --timeout 5m
   ready=$(k -n "$ns" get deploy -o jsonpath='{.items[0].status.readyReplicas}')
   [ "$ready" = 1 ] || die "$cloud: expected 1 ready replica, got '${ready:-0}'"
@@ -137,6 +140,7 @@ probe() {
 log "webapp: a plain-HTTP ingress, in a namespace that does not enforce the policies"
 k label nodes --all pool=default --overwrite >/dev/null
 h upgrade --install web "$app" -n web-http --create-namespace -f "$app/values-dev.yaml" \
+  --set networkPolicy.ingressNamespace=traefik-test \
   --set ingress.enabled=true --set ingress.host=$host --wait --timeout 5m
 log "routing an HTTP request through Traefik (Host: $host)"
 retry 10 3 probe "http://$traefik_ip/healthz" >/dev/null || die "Traefik did not route http://$host/healthz to the app"
@@ -144,8 +148,10 @@ h uninstall web -n web-http --wait
 
 log "webapp in the enforcing namespace: dev values, then an upgrade to prod values"
 prepare_ns "$ns"
-h upgrade --install web "$app" -n "$ns" --create-namespace -f "$app/values-dev.yaml" --wait --timeout 5m
-h upgrade web "$app" -n "$ns" -f "$app/values-prod.yaml" --set ingress.host=$host --set ingress.tls.clusterIssuer=selfsigned --wait --timeout 5m
+h upgrade --install web "$app" -n "$ns" --create-namespace -f "$app/values-dev.yaml" \
+  --set networkPolicy.ingressNamespace=traefik-test --wait --timeout 5m
+h upgrade web "$app" -n "$ns" -f "$app/values-prod.yaml" --set networkPolicy.ingressNamespace=traefik-test \
+  --set ingress.host=$host --set ingress.tls.clusterIssuer=selfsigned --wait --timeout 5m
 for kind in hpa pdb ingress; do
   [ -n "$(k -n "$ns" get "$kind" -o name)" ] || die "prod values should have created a $kind"
 done
@@ -173,6 +179,6 @@ https_port=$(k -n traefik-test get svc traefik -o jsonpath='{.spec.ports[?(@.nam
 if [ -z "$node_ip" ] || [ -z "$https_port" ]; then
   die "cannot find the node address and Traefik's HTTPS node port"
 fi
-KUBE_CONTEXT=$ctx INGRESS_ADDRESS=$node_ip INGRESS_HTTPS_PORT=$https_port "$here/deploy.sh" aws dev
+KUBE_CONTEXT=$ctx INGRESS_NAMESPACE=traefik-test INGRESS_ADDRESS=$node_ip INGRESS_HTTPS_PORT=$https_port "$here/deploy.sh" aws dev
 
 log "all chart tests passed"

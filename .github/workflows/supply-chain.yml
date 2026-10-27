@@ -28,6 +28,7 @@ on:
       - scripts/scan-summary.sh
       - supply-chain-exceptions.txt
       - infra/modules/core-addons/variables.tf
+      - infra/modules/core-addons/monitoring-values.yaml
       - infra/aws-eks/variables.tf
       - .github/workflows/supply-chain.yml
 

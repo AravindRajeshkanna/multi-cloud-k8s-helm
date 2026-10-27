@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tests the admission policies in policies/ (and the Pod Security Standard that
-# scripts/deploy.sh also enforces) on a THROWAWAY local cluster (kind, minikube...).
+# Tests the admission policies in policies/admission, the quota and limit range in
+# policies/namespace, and the Pod Security Standard that scripts/deploy.sh also
+# enforces, on a THROWAWAY local cluster (kind, minikube...).
 # It installs the policies, creates two namespaces, and deletes them again; never
 # point it at a cluster that matters.
 #
@@ -100,6 +101,7 @@ log "installing the policies"
 k apply -f "$root/policies/admission/" >/dev/null
 for ns in "$on" "$off"; do k create namespace "$ns" >/dev/null; done
 k label namespace "$on" policy.multi-cloud-k8s-helm.io/enforce=true pod-security.kubernetes.io/enforce=restricted >/dev/null
+k apply -n "$on" -f "$root/policies/namespace/" >/dev/null
 
 # A policy takes a moment to start enforcing: wait until a violation is refused.
 log "waiting for the policies to be enforced"
@@ -137,6 +139,22 @@ admitted "an image from Artifact Registry is admitted" "$on" "$(pod us-central1-
 
 privileged=$(pod "$good_image" | jq '.spec.containers[0].securityContext = {privileged: true}')
 denied "a privileged pod is refused by the Pod Security Standard" "PodSecurity" "$on" "$privileged"
+
+echo "-- namespace limits (policies/namespace)"
+sized() { # <cpu request> <memory request> <memory limit>: the compliant pod with that sizing
+  pod "$good_image" | jq --arg cr "$1" --arg mr "$2" --arg ml "$3" '.spec.containers[0].resources = {requests: {cpu: $cr, memory: $mr}, limits: {memory: $ml}}'
+}
+admitted "a modestly sized pod is admitted" "$on" "$(sized 100m 128Mi 256Mi)"
+denied "a container above the limit range's maximum is refused" "maximum memory usage per Container" "$on" "$(sized 100m 128Mi 4Gi)"
+denied "a container below the limit range's minimum is refused" "minimum cpu usage per Container" "$on" "$(sized 1m 128Mi 256Mi)"
+# Three containers of 1500Mi are each within the limit range, but 4.5Gi in total
+# is over the namespace's 4Gi of requested memory.
+over_quota=$(pod "$good_image" | jq --arg image "$good_image" '.spec.containers = [range(3) as $i | {
+  name: "c\($i)", image: $image,
+  resources: {requests: {cpu: "10m", memory: "1500Mi"}, limits: {memory: "1500Mi"}},
+  securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: ["ALL"]}}}]')
+denied "a pod that would exceed the namespace's memory quota is refused" "exceeded quota: workload-quota" "$on" "$over_quota"
+admitted "the same pod is admitted in a namespace with no quota" "$off" "$over_quota"
 
 echo "-- scope"
 admitted "the same violations are admitted in a namespace that is not labelled" "$off" "$bad"

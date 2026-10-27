@@ -1,0 +1,18 @@
+# Bounds for a single container. There are deliberately no defaults here: a
+# LimitRange default would fill in missing requests and limits, and the
+# admission policy that requires containers to declare them (workloads-require-
+# resources) would then pass without the author ever choosing a value.
+# Applied into each workload namespace by scripts/deploy.sh.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: workload-limits
+spec:
+  limits:
+    - type: Container
+      min:
+        cpu: 5m
+        memory: 8Mi
+      max:
+        cpu: "2"
+        memory: 2Gi

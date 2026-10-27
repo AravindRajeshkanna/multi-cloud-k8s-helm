@@ -87,6 +87,9 @@ jobs:
       # CI owns teardown (guarded by the confirm input), so GKE's own
       # deletion protection would only get in the way of `down`.
       TF_VAR_deletion_protection: "false"
+      # Optional Prometheus + Grafana (docs/observability.md). Set the ENABLE_MONITORING
+      # variable to "true" on the environment or repository. A bool cannot be empty.
+      TF_VAR_enable_monitoring: ${{ vars.ENABLE_MONITORING || 'false' }}
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v7

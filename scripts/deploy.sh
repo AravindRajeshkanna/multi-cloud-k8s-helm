@@ -6,10 +6,11 @@
 #   deploy.sh <aws|azure|gcp> <dev|prod>
 #
 # In the roadmap's order: 1. the platform pieces that depend on the cluster
-# (the admission policies in policies/, and the cert-manager issuers;
+# (the admission policies in policies/admission, and the cert-manager issuers;
 # cert-manager and the ingress controller themselves come from Terraform),
 # 2. shared services (none yet), 3. the application chart in a namespace that
-# enforces those policies, 4. validation: helm test, the certificate, the HPA
+# enforces those policies and has a resource quota and network rules of its own
+# (policies/namespace), 4. validation: helm test, the certificate, the HPA
 # receiving metrics, and a real HTTPS request through the ingress controller's
 # load balancer.
 #
@@ -23,6 +24,8 @@
 #                        (default example.test; required for prod)
 #   ACME_EMAIL           enables the Let's Encrypt issuers (required for prod)
 #   IMAGE_TAG            deploy this image tag instead of the chart's appVersion
+#   INGRESS_NAMESPACE    namespace of the ingress controller (default ingress); the
+#                        app's network policy admits traffic from it
 #   INGRESS_ADDRESS      address (IP or name) of the ingress controller;
 #                        default: the load balancer of Service ingress/traefik
 #   INGRESS_HTTPS_PORT   default 443
@@ -69,6 +72,7 @@ fi
 
 domain=${APP_DOMAIN:-example.test}
 release=web
+ingress_ns=${INGRESS_NAMESPACE:-ingress}
 ns=web-$env
 host=web-$env.$cloud.$domain
 poll=${POLL_INTERVAL:-10}
@@ -145,16 +149,28 @@ app_args=(-f "$root/charts/webapp/values-$values_cloud.yaml" -f "$root/charts/we
 if [ -n "${IMAGE_TAG:-}" ]; then
   app_args+=(--set-string "image.tag=$IMAGE_TAG")
 fi
+app_args+=(--set "networkPolicy.ingressNamespace=$ingress_ns")
+# Prometheus scraping and alerts, when the cluster has the Prometheus Operator
+# (the optional monitoring stack, docs/observability.md).
+monitoring_state="not installed"
+if k get crd servicemonitors.monitoring.coreos.com >/dev/null 2>&1; then
+  log "monitoring stack found: enabling the ServiceMonitor and alerts"
+  app_args+=(--set metrics.serviceMonitor.enabled=true --set metrics.rules.enabled=true)
+  monitoring_state="scraped, alerts loaded"
+fi
 if [ "$env" = dev ]; then
   # No domain needed: self-signed TLS, and requests carry the Host header.
   app_args+=(--set ingress.enabled=true --set ingress.tls.enabled=true --set ingress.tls.clusterIssuer=selfsigned)
 fi
 # Created and labelled first, so the policies and the restricted Pod Security
-# Standard apply from the first pod (Helm's --create-namespace cannot label).
+# Standard apply from the first pod (Helm's --create-namespace cannot label),
+# with the namespace's quota, limit range and network rules in place before it.
 k create namespace "$ns" --dry-run=client -o yaml | k apply -f - >/dev/null
 k label namespace "$ns" --overwrite \
   policy.multi-cloud-k8s-helm.io/enforce=true \
   pod-security.kubernetes.io/enforce=restricted >/dev/null
+k apply -n "$ns" -f "$root/policies/namespace/" >/dev/null ||
+  die "cannot apply the namespace quota and network rules to $ns"
 h upgrade --install "$release" "$root/charts/webapp" -n "$ns" "${app_args[@]}" \
   --wait --rollback-on-failure --timeout 10m
 
@@ -197,12 +213,12 @@ if [ "${SKIP_INGRESS_SMOKE:-0}" != 1 ]; then
     if [ -n "${INGRESS_ADDRESS:-}" ]; then
       addr=$INGRESS_ADDRESS
     else
-      addr=$(k -n ingress get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || addr=""
+      addr=$(k -n "$ingress_ns" get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || addr=""
     fi
     [ -n "$addr" ]
   }
   log "validate: waiting for the ingress controller's address"
-  wait_for "$lb_timeout" "the ingress controller (Service ingress/traefik) to get a load balancer address" have_address
+  wait_for "$lb_timeout" "the ingress controller (Service $ingress_ns/traefik) to get a load balancer address" have_address
   smoke_body=""
   smoke() {
     smoke_body=$(curl -fsSk --max-time 10 --connect-to "$host:443:$addr:$port" "https://$host/healthz")
@@ -227,6 +243,7 @@ summary() {
   echo "| helm test | passed |"
   echo "| certificate | $cert_state |"
   echo "| autoscaler | $hpa_state |"
+  echo "| monitoring | $monitoring_state |"
   echo "| request through the ingress | $smoke_state |"
   if [ "$env" = prod ] && [ -n "$addr" ]; then
     echo

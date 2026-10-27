@@ -66,10 +66,22 @@ jobs:
       - name: Lint and render every cloud x environment, assert on the manifests
         run: scripts/test-charts.sh
 
+  # The charts, policies and network rules on a real API server. Run once with
+  # kind's default network plugin (which ignores NetworkPolicy) and once with
+  # Cilium (which enforces it, as AKS and GKE do), so the same tests prove the
+  # rules are accepted everywhere and enforced where they can be.
   charts-kind:
-    name: helm charts (install on a throwaway kind cluster)
+    name: kind cluster (${{ matrix.cni }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cni: kindnet
+            network_policy: ignored
+          - cni: cilium
+            network_policy: enforced
     steps:
       - uses: actions/checkout@v7
       - uses: azure/setup-helm@v5
@@ -78,14 +90,38 @@ jobs:
       - name: Create a throwaway cluster
         run: |
           kind version
-          kind create cluster --name charts --wait 180s
+          scripts/kind-cluster.sh charts ${{ matrix.cni }}
           kubectl --context kind-charts version
       - name: Install and test the charts
         run: KUBE_CONTEXT=kind-charts scripts/test-charts-kind.sh
-      - name: Test the admission policies
+      - name: Test the admission policies and namespace limits
         run: KUBE_CONTEXT=kind-charts scripts/test-policies-kind.sh
+      - name: Test the network rules
+        run: KUBE_CONTEXT=kind-charts NETWORK_POLICY=${{ matrix.network_policy }} scripts/test-network-kind.sh
       - name: Show cluster state after a failure
         if: failure()
         run: |
           kubectl --context kind-charts get pods -A -o wide || true
           kubectl --context kind-charts get events -A --sort-by=.lastTimestamp | tail -n 60 || true
+
+  # The optional Prometheus and Grafana stack, from the values file Terraform uses,
+  # on the policy-enforcing cluster so Prometheus has to get through the app's
+  # network policy.
+  monitoring-kind:
+    name: monitoring stack (kind, cilium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+        with:
+          version-file: .tool-versions
+      - name: Create a throwaway cluster
+        run: scripts/kind-cluster.sh monitoring cilium
+      - name: Install the stack and check what it scrapes
+        run: KUBE_CONTEXT=kind-monitoring scripts/test-monitoring-kind.sh
+      - name: Show cluster state after a failure
+        if: failure()
+        run: |
+          kubectl --context kind-monitoring get pods -A -o wide || true
+          kubectl --context kind-monitoring get events -A --sort-by=.lastTimestamp | tail -n 60 || true

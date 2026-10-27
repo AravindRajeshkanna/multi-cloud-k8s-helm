@@ -1,0 +1,16 @@
+# A ceiling on what one workload namespace can consume, so a runaway deployment
+# or a mistyped replica count cannot take a whole cluster's capacity.
+# Sized for the webapp at its production maximum (10 replicas) with room to spare.
+# Applied into each workload namespace by scripts/deploy.sh. Docs: docs/hardening.md
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: workload-quota
+spec:
+  hard:
+    pods: "30"
+    requests.cpu: "4"
+    requests.memory: 4Gi
+    limits.memory: 8Gi
+    services: "10"
+    persistentvolumeclaims: "5"

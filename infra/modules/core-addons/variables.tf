@@ -34,6 +34,18 @@ variable "traefik_chart_version" {
   default     = "42.1.3"
 }
 
+variable "enable_monitoring" {
+  description = "Install Prometheus and Grafana (kube-prometheus-stack, values in monitoring-values.yaml). Off by default: it adds about 1.5 GiB of memory demand to a small cluster."
+  type        = bool
+  default     = false
+}
+
+variable "monitoring_chart_version" {
+  description = "Version of the kube-prometheus-stack Helm chart."
+  type        = string
+  default     = "92.14.1"
+}
+
 variable "cert_manager_chart_version" {
   description = "Version of the cert-manager Helm chart."
   type        = string

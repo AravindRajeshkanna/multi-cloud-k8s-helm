@@ -1,0 +1,57 @@
+# Network posture of a workload namespace: nothing in or out unless allowed.
+# Each application opens exactly what it needs with its own NetworkPolicy (the
+# webapp chart does). Enforced where the network plugin enforces NetworkPolicy:
+# Cilium on AKS and GKE, the VPC CNI's network policy support on EKS.
+# Applied into each workload namespace by scripts/deploy.sh.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Name resolution is the one thing every pod needs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# cert-manager answers a Let's Encrypt challenge with a short-lived pod of its
+# own in this namespace; the validation request arrives through the ingress
+# controller, from outside the namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-acme-challenge
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - port: 8089
+          protocol: TCP

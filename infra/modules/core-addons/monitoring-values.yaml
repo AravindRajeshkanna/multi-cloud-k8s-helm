@@ -1,0 +1,87 @@
+# Prometheus and Grafana for the platform. Optional (var.enable_monitoring);
+# see docs/observability.md. This one file is read by Terraform and by the
+# throwaway-cluster test (scripts/test-monitoring-kind.sh), so what is tested is
+# what is deployed.
+#
+# Sized for the small node pools, and nothing is persisted: the clusters are
+# disposable (ADR 0003), so metrics are a window onto the current cluster, not
+# an archive. Nothing is exposed outside the cluster; reach Grafana and
+# Prometheus with kubectl port-forward.
+
+# Alertmanager needs a destination (email, chat) that only the owner can choose.
+# Alerts are evaluated and visible in Prometheus and Grafana without it.
+alertmanager:
+  enabled: false
+
+# The control plane of EKS, AKS and GKE is managed and cannot be scraped. Left on,
+# these would produce alerts that fire forever.
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+# AKS and GKE (Cilium) have no kube-proxy at all, and EKS's is not worth alerting on.
+kubeProxy:
+  enabled: false
+defaultRules:
+  rules:
+    etcd: false
+    kubeControllerManager: false
+    kubeProxy: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    windows: false
+
+prometheus:
+  prometheusSpec:
+    retention: 24h
+    # Pick up the ServiceMonitors, PodMonitors and rules that applications ship
+    # (the webapp chart does), not only the ones from this release.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 200m
+        memory: 700Mi
+      limits:
+        memory: 1500Mi
+
+grafana:
+  enabled: true
+  # Empty makes the chart generate a random admin password (it does by default in
+  # chart 92.14.1; older releases shipped a fixed one, so this is stated rather than
+  # assumed). Read it with:
+  #   kubectl -n monitoring get secret monitoring-grafana -o jsonpath='{.data.admin-password}' | base64 -d
+  adminPassword: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 150Mi
+    limits:
+      memory: 300Mi
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 100Mi
+    limits:
+      memory: 200Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 60Mi
+    limits:
+      memory: 150Mi
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 30Mi
+    limits:
+      memory: 80Mi

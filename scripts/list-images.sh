@@ -30,7 +30,8 @@ traefik=$(tf_default "$core" traefik_chart_version)
 metrics_server=$(tf_default "$core" metrics_server_chart_version)
 autoscaler=$(tf_default infra/aws-eks/variables.tf cluster_autoscaler_chart_version)
 autoscaler_tag=$(tf_default infra/aws-eks/variables.tf cluster_autoscaler_image_tag)
-for v in "$cert_manager" "$traefik" "$metrics_server" "$autoscaler" "$autoscaler_tag"; do
+monitoring=$(tf_default "$core" monitoring_chart_version)
+for v in "$cert_manager" "$traefik" "$metrics_server" "$autoscaler" "$autoscaler_tag" "$monitoring"; do
   case $v in [v0-9]*) ;; *) die "cannot read a chart version or image tag from the Terraform variables (got '$v')" ;; esac
 done
 
@@ -51,4 +52,8 @@ images_in() {
   helm template metrics-server metrics-server --repo https://kubernetes-sigs.github.io/metrics-server --version "$metrics_server"
   helm template cluster-autoscaler cluster-autoscaler --repo https://kubernetes.github.io/autoscaler --version "$autoscaler" \
     --set awsRegion=us-east-1 --set autoDiscovery.clusterName=mc-eks --set image.tag="$autoscaler_tag"
+  # The optional monitoring stack, with the values Terraform deploys. Its test pod's
+  # image is never deployed, so it is skipped.
+  helm template monitoring kube-prometheus-stack --repo https://prometheus-community.github.io/helm-charts \
+    --version "$monitoring" -f "$root/infra/modules/core-addons/monitoring-values.yaml" --skip-tests
 } | images_in | sort -u

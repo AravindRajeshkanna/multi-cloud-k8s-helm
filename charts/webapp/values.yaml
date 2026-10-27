@@ -139,6 +139,30 @@ ingress:
     # charts/cluster-issuers (selfsigned, letsencrypt-staging, letsencrypt-prod).
     clusterIssuer: ""
 
+# Closes the pods to everything but the ingress controller, Prometheus and the
+# helm test pod. It adds to the namespace's default-deny policy
+# (policies/namespace/network.yaml) and is enforced where the cluster's network
+# plugin enforces NetworkPolicy (Cilium on AKS and GKE, the VPC CNI on EKS).
+networkPolicy:
+  enabled: true
+  ingressNamespace: ingress
+  monitoringNamespace: monitoring
+
+# Prometheus scraping and alerts. Both need the Prometheus Operator's CRDs, which
+# the optional monitoring stack installs; scripts/deploy.sh turns them on when
+# the CRDs exist.
+metrics:
+  path: /metrics
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
+  rules:
+    enabled: false
+    labels: {}
+    # Share of requests (in percent) answered with a 5xx that raises WebappHighErrorRate.
+    errorRatePercent: 5
+
 # --- availability and scheduling --------------------------------------------
 
 autoscaling:
